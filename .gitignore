@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+package-lock.json
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.local
+*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+pnpm-debug.log*
+logs/
+
+# Testing
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+
+# Misc
+*.bak
+*.tmp

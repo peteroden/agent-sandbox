@@ -1,0 +1,7 @@
+{
+  "venvPath": "/workspaces/agent-sandbox/backend",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "include": ["backend/src", "backend/tests"],
+  "extraPaths": ["backend/src"]
+}

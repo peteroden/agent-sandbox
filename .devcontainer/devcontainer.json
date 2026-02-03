@@ -1,0 +1,62 @@
+{
+  "name": "Agent Sandbox",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    },
+    "ghcr.io/devcontainers/features/azure-cli:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/copilot-cli:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "forwardPorts": [4318, 5173, 8000, 8080],
+  "portsAttributes": {
+    "4318": {
+      "label": "OTLP Collector",
+      "onAutoForward": "silent"
+    },
+    "5173": {
+      "label": "Frontend",
+      "onAutoForward": "notify"
+    },
+    "8000": {
+      "label": "Backend",
+      "onAutoForward": "notify"
+    },
+    "8080": {
+      "label": "SigNoz UI",
+      "onAutoForward": "silent"
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "davidanson.vscode-markdownlint",
+        "github.copilot",
+        "github.copilot-chat"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/workspaces/agent-sandbox/.venv/bin/python",
+        "python.terminal.activateEnvironment": true,
+        "editor.formatOnSave": true
+      }
+    }
+  },
+  "containerEnv": {
+    "PYTHONPATH": "/workspaces/agent-sandbox"
+  },
+  "remoteUser": "vscode"
+}
