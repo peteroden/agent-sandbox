@@ -107,6 +107,8 @@ Use Pydantic `BaseModel` for all data models with `Field` validators.
 
 Use `@pytest.mark.asyncio` for async tests, fixtures for dependency injection, `unittest.mock` for mocking.
 
+For testing best practices (avoiding magic strings, parameterized tests, mocking at boundaries), see [python-script.instructions.md](../instructions/python-script.instructions.md).
+
 ## SOLID Principles
 
 Apply SOLID throughout:
@@ -153,8 +155,18 @@ Follow these instruction files when working on backend code:
 
 - [python-script.instructions.md](../instructions/python-script.instructions.md) for Python patterns
 - [uv-projects.instructions.md](../instructions/uv-projects.instructions.md) for environment management
+- [code-review.instructions.md](../instructions/code-review.instructions.md) for mandatory code review
 - [commit-message.instructions.md](../instructions/commit-message.instructions.md) for commits
 - [markdown.instructions.md](../instructions/markdown.instructions.md) for documentation
+
+## Mandatory Code Review
+
+No work is complete until code review is conducted. Before marking any task done:
+
+1. Run tests: `cd backend && uv run pytest`
+2. Perform self-review using [code-review.instructions.md](../instructions/code-review.instructions.md)
+3. Resolve all 🔴 CRITICAL and 🟡 IMPORTANT findings
+4. Apply or acknowledge 🟢 SUGGESTION items
 
 ## Running Services
 
