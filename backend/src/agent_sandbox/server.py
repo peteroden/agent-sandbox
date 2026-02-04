@@ -1,22 +1,22 @@
 """AG-UI server for Agent Sandbox."""
 
-import asyncio
 import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
-from agent_framework import ChatAgent, MCPStreamableHTTPTool
+from agent_framework import ChatAgent
 from agent_framework._agents import AgentProtocol
 from agent_framework_ag_ui import add_agent_framework_fastapi_endpoint
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from opentelemetry import trace
 
 from agent_sandbox.agents.mock_agent import MockAgent
-from agent_sandbox.otel_utils import inject_otel_context_to_meta
+from agent_sandbox.registry.mcp_registry import MCPServerRegistry
 from agent_sandbox.telemetry import configure_mcp_telemetry, instrument_mcp_app
+from agent_sandbox.tools.tracing_mcp_tool import TracingMCPTool
 
 
 # Configure OpenTelemetry observability (must be done BEFORE app creation)
@@ -32,34 +32,6 @@ if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-class TracingMCPTool(MCPStreamableHTTPTool):
-    """MCPStreamableHTTPTool subclass that propagates trace context via _meta.
-
-    HTTP headers don't work for MCP trace propagation because the MCP library
-    spawns internal async tasks that break OpenTelemetry context. Instead, we
-    inject trace context into the _meta field which is passed through the MCP
-    JSON-RPC protocol.
-
-    Based on: https://github.com/timvw/fastmcp-otel-langfuse
-    """
-
-    async def call_tool(self, tool_name: str, **kwargs: Any) -> Any:
-        """Override call_tool to inject trace context via _meta field."""
-        # Inject current trace context into _meta
-        meta = inject_otel_context_to_meta()
-        if meta:
-            kwargs["_meta"] = meta
-
-        return await super().call_tool(tool_name, **kwargs)
-
-
-# Multi-server configuration: (name, url) tuples
-# Add new servers here - each entry creates an MCPStreamableHTTPTool
-MCP_SERVERS: list[tuple[str, str]] = [
-    ("text", os.environ.get("MCP_TEXT_URL", "http://localhost:8001/mcp")),
-    ("numbers", os.environ.get("MCP_NUMBERS_URL", "http://localhost:8002/mcp")),
-]
 
 # Agent configuration
 AGENT_NAME = "AGUIAssistant"
@@ -147,43 +119,49 @@ def _create_chat_agent(
     )
 
 
-async def create_mcp_tools() -> list[TracingMCPTool]:
+def get_default_config_path() -> Path:
+    """Get the default path for MCP server configuration.
+
+    Returns:
+        Path to mcp-servers.yaml in the backend directory
+    """
+    return Path(__file__).parent.parent.parent / "mcp-servers.yaml"
+
+
+async def create_mcp_tools(config_path: Path | None = None) -> list[TracingMCPTool]:
     """Create and connect to all configured MCP servers.
 
+    Loads server configuration from YAML file using MCPServerRegistry.
     Handles individual server failures gracefully - if a server is unavailable,
-    it logs a warning and continues with the remaining servers. Retries
-    connections to handle startup race conditions.
+    it logs a warning and continues with the remaining servers.
 
     Uses TracingMCPTool which injects trace context via _meta field for
     proper distributed tracing across MCP boundaries.
-    """
-    tools: list[TracingMCPTool] = []
-    max_retries = 3
-    retry_delay = 1.0
 
-    for name, url in MCP_SERVERS:
-        for attempt in range(max_retries):
-            try:
-                # Create tool with trace context propagation via _meta field
-                tool = TracingMCPTool(
-                    name=f"{name}-tools",
-                    url=url,
-                    description=f"Tools provided by the {name} MCP server",
-                )
-                await tool.connect()
-                tools.append(tool)
-                logger.info(f"Connected to MCP server '{name}' at {url}")
-                break
-            except asyncio.CancelledError:
-                # Don't retry on cancellation - propagate it
-                raise
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_delay)
-                else:
-                    logger.warning(
-                        f"MCP server '{name}' unavailable at {url}: {e}")
-    return tools
+    Args:
+        config_path: Optional path to config file. If None, uses MCP_CONFIG_PATH
+                     env var or defaults to mcp-servers.yaml in backend directory.
+
+    Returns:
+        List of connected TracingMCPTool instances
+    """
+    # Determine config path
+    path = config_path
+    if path is None and not os.environ.get("MCP_CONFIG_PATH"):
+        path = get_default_config_path()
+
+    # Load registry from config
+    registry = MCPServerRegistry.load(path)
+
+    # Log loaded configuration
+    enabled_servers = registry.get_enabled_servers()
+    logger.info(
+        f"Loaded MCP config with {len(enabled_servers)} enabled servers: "
+        f"{[s.name for s in enabled_servers]}"
+    )
+
+    # Get tools from registry
+    return await registry.get_all_tools()
 
 
 def create_agent(

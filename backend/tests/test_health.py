@@ -12,7 +12,18 @@ from agent_sandbox.health import (
     check_service_health,
     format_status_table,
 )
-from tests.conftest import TEST_SERVICE_NAME, TEST_SERVICE_URL
+from tests.conftest import (
+    TEST_SERVICE_NAME,
+    TEST_SERVICE_URL,
+)
+
+# === Local Constants ===
+HEALTHY_INDICATOR = "✓"
+UNHEALTHY_INDICATOR = "✗"
+CUSTOM_SERVICE_1 = "svc1"
+CUSTOM_SERVICE_2 = "svc2"
+CUSTOM_SERVICE_URL_1 = "http://localhost:9001"
+CUSTOM_SERVICE_URL_2 = "http://localhost:9002"
 
 
 class TestCheckServiceHealth:
@@ -33,6 +44,7 @@ class TestCheckServiceHealth:
             (None, httpx.ConnectError("refused"), "refused"),
             (None, httpx.TimeoutException("timeout"), "timeout"),
         ],
+        ids=["http_500_error", "connection_refused", "timeout"],
     )
     def test_returns_unhealthy_for_errors(
         self, status_code: int | None, exception: Exception | None, expected_error: str
@@ -65,13 +77,15 @@ class TestCheckAllServices:
 
     def test_uses_custom_services_when_provided(self) -> None:
         """Uses custom services list when provided."""
-        custom = [("svc1", "http://localhost:9001"),
-                  ("svc2", "http://localhost:9002")]
+        custom = [
+            (CUSTOM_SERVICE_1, CUSTOM_SERVICE_URL_1),
+            (CUSTOM_SERVICE_2, CUSTOM_SERVICE_URL_2),
+        ]
 
         with patch("agent_sandbox.health.httpx.get", return_value=MagicMock(status_code=200)):
             results = check_all_services(services=custom)
 
-        assert [r.name for r in results] == ["svc1", "svc2"]
+        assert [r.name for r in results] == [CUSTOM_SERVICE_1, CUSTOM_SERVICE_2]
 
 
 class TestFormatStatusTable:
@@ -80,9 +94,10 @@ class TestFormatStatusTable:
     @pytest.mark.parametrize(
         ("healthy", "error", "expected_indicator"),
         [
-            (True, None, "✓"),
-            (False, "Connection refused", "✗"),
+            (True, None, HEALTHY_INDICATOR),
+            (False, "Connection refused", UNHEALTHY_INDICATOR),
         ],
+        ids=["healthy_status", "unhealthy_status"],
     )
     def test_formats_status_with_correct_indicator(
         self, healthy: bool, error: str | None, expected_indicator: str

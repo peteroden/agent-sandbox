@@ -9,6 +9,15 @@ from agent_framework._types import AgentResponseUpdate
 
 from agent_sandbox.agents.mock_agent import MockAgent
 
+# === Local Constants ===
+AGENT_NAME = "MockAgent"
+AGENT_PREFIX = "[Mock] "
+TOOL_NAME_ECHO = "echo"
+TOOL_NAME_ADD = "add"
+TOOL_NAME_SUBTRACT = "subtract"
+TOOL_DESC_ECHO = "Echo a message back"
+TOOL_PARAM_MESSAGE = "message"
+
 
 async def get_stream_text(agent: MockAgent, message: str) -> str:
     """Collect all text from run_stream updates."""
@@ -40,7 +49,7 @@ class TestMockAgentRunStream:
 
         # Combine all text from updates
         all_text = "".join(str(u.text) for u in updates if u.text)
-        assert "[Mock] Echo: Hello" in all_text
+        assert f"{AGENT_PREFIX}Echo: Hello" in all_text
 
     @pytest.mark.asyncio
     async def test_run_stream_handles_none_messages(self, mock_agent: MockAgent) -> None:
@@ -72,22 +81,24 @@ class TestMockAgentDefaults:
     def test_default_name(self) -> None:
         """Default name should be MockAgent."""
         agent = MockAgent()
-        assert agent.name == "MockAgent"
+        assert agent.name == AGENT_NAME
 
     def test_default_response_prefix(self) -> None:
         """Default response prefix should be [Mock]."""
         agent = MockAgent()
-        assert agent.response_prefix == "[Mock] "
+        assert agent.response_prefix == AGENT_PREFIX
 
     def test_custom_name(self) -> None:
         """Should accept custom name."""
-        agent = MockAgent(name="CustomAgent")
-        assert agent.name == "CustomAgent"
+        custom_name = "CustomAgent"
+        agent = MockAgent(name=custom_name)
+        assert agent.name == custom_name
 
     def test_custom_prefix(self) -> None:
         """Should accept custom prefix."""
-        agent = MockAgent(response_prefix="[Test] ")
-        assert agent.response_prefix == "[Test] "
+        custom_prefix = "[Test] "
+        agent = MockAgent(response_prefix=custom_prefix)
+        assert agent.response_prefix == custom_prefix
 
 
 class TestMockAgentToolSupport:
@@ -99,13 +110,13 @@ class TestMockAgentToolSupport:
         tool = MagicMock()
         # Mock the functions property to return available tools
         mock_func = MagicMock()
-        mock_func.name = "echo"
-        mock_func.description = "Echo a message back"
+        mock_func.name = TOOL_NAME_ECHO
+        mock_func.description = TOOL_DESC_ECHO
         # Add parameter schema for schema-based arg building
         mock_func.parameters = MagicMock(return_value={
             "type": "object",
-            "properties": {"message": {"type": "string"}},
-            "required": ["message"],
+            "properties": {TOOL_PARAM_MESSAGE: {"type": "string"}},
+            "required": [TOOL_PARAM_MESSAGE],
         })
         tool.functions = [mock_func]
         # Mock call_tool to return a result
@@ -134,7 +145,7 @@ class TestMockAgentToolSupport:
 
         available = agent._get_available_tools()
         assert len(available) == 1
-        assert available[0][0] == "echo"
+        assert available[0][0] == TOOL_NAME_ECHO
 
     def test_mock_agent_discovers_tools_from_dict(
         self, dict_tool: dict[str, Any]
@@ -153,7 +164,7 @@ class TestMockAgentToolSupport:
         """MockAgent identifies 'use echo' in message."""
         agent = MockAgent(tools=[mock_mcp_tool])
 
-        updates = [update async for update in agent.run_stream("use echo hello world")]
+        updates = [update async for update in agent.run_stream(f"use {TOOL_NAME_ECHO} hello world")]
 
         # Tool should be called
         mock_mcp_tool.call_tool.assert_called_once()
@@ -166,10 +177,10 @@ class TestMockAgentToolSupport:
         """MockAgent calls tool with message argument."""
         agent = MockAgent(tools=[mock_mcp_tool])
 
-        updates = [update async for update in agent.run_stream("use echo test message")]
+        updates = [update async for update in agent.run_stream(f"use {TOOL_NAME_ECHO} test message")]
 
         mock_mcp_tool.call_tool.assert_called_once_with(
-            "echo", message="test message")
+            TOOL_NAME_ECHO, message="test message")
         assert len(updates) >= 1
 
     @pytest.mark.asyncio
@@ -180,7 +191,7 @@ class TestMockAgentToolSupport:
         mock_mcp_tool.call_tool.return_value = "Echo: hello world"
         agent = MockAgent(tools=[mock_mcp_tool])
 
-        updates = [update async for update in agent.run_stream("use echo hello world")]
+        updates = [update async for update in agent.run_stream(f"use {TOOL_NAME_ECHO} hello world")]
 
         # Tool results are emitted as Content.from_function_result
         results = [
@@ -200,7 +211,7 @@ class TestMockAgentToolSupport:
         mock_mcp_tool.call_tool.return_value = "Echo: streamed"
         agent = MockAgent(tools=[mock_mcp_tool])
 
-        updates = [update async for update in agent.run_stream("use echo streamed")]
+        updates = [update async for update in agent.run_stream(f"use {TOOL_NAME_ECHO} streamed")]
 
         # Tool results are emitted as Content.from_function_result
         results = [
@@ -224,7 +235,7 @@ class TestMockAgentToolSupport:
         # Tool should not be called
         mock_mcp_tool.call_tool.assert_not_called()
         all_text = "".join(str(u.text) for u in updates if u.text)
-        assert "[Mock] Echo:" in all_text
+        assert f"{AGENT_PREFIX}Echo:" in all_text
 
     @pytest.mark.asyncio
     async def test_mock_agent_handles_content_list_result(
@@ -237,7 +248,7 @@ class TestMockAgentToolSupport:
         mock_mcp_tool.call_tool.return_value = [mock_content]
         agent = MockAgent(tools=[mock_mcp_tool])
 
-        updates = [update async for update in agent.run_stream("use echo test")]
+        updates = [update async for update in agent.run_stream(f"use {TOOL_NAME_ECHO} test")]
 
         # Tool results are emitted as Content.from_function_result
         results = [
@@ -259,7 +270,7 @@ class TestMockAgentNumberTools:
         tool = MagicMock()
         # Mock the functions property for add and subtract with schemas
         add_func = MagicMock()
-        add_func.name = "add"
+        add_func.name = TOOL_NAME_ADD
         add_func.parameters = MagicMock(return_value={
             "type": "object",
             "properties": {
@@ -269,7 +280,7 @@ class TestMockAgentNumberTools:
             "required": ["a", "b"],
         })
         subtract_func = MagicMock()
-        subtract_func.name = "subtract"
+        subtract_func.name = TOOL_NAME_SUBTRACT
         subtract_func.parameters = MagicMock(return_value={
             "type": "object",
             "properties": {
@@ -333,9 +344,10 @@ class TestMockAgentNumberTools:
         mock_number_tool.call_tool.return_value = 8
         agent = MockAgent(tools=[mock_number_tool])
 
-        updates = [update async for update in agent.run_stream("use add 5 3")]
+        updates = [update async for update in agent.run_stream(f"use {TOOL_NAME_ADD} 5 3")]
 
-        mock_number_tool.call_tool.assert_called_once_with("add", a=5, b=3)
+        mock_number_tool.call_tool.assert_called_once_with(
+            TOOL_NAME_ADD, a=5, b=3)
         assert len(updates) >= 1
 
     @pytest.mark.asyncio
@@ -346,7 +358,7 @@ class TestMockAgentNumberTools:
         mock_number_tool.call_tool.return_value = 8
         agent = MockAgent(tools=[mock_number_tool])
 
-        updates = [update async for update in agent.run_stream("use add 5 3")]
+        updates = [update async for update in agent.run_stream(f"use {TOOL_NAME_ADD} 5 3")]
 
         # Tool results are emitted as Content.from_function_result
         results = [
@@ -366,10 +378,10 @@ class TestMockAgentNumberTools:
         mock_number_tool.call_tool.return_value = 7
         agent = MockAgent(tools=[mock_number_tool])
 
-        updates = [update async for update in agent.run_stream("use subtract 10 3")]
+        updates = [update async for update in agent.run_stream(f"use {TOOL_NAME_SUBTRACT} 10 3")]
 
         mock_number_tool.call_tool.assert_called_once_with(
-            "subtract", a=10, b=3)
+            TOOL_NAME_SUBTRACT, a=10, b=3)
         assert len(updates) >= 1
 
     @pytest.mark.asyncio
@@ -380,9 +392,10 @@ class TestMockAgentNumberTools:
         mock_number_tool.call_tool.return_value = -2
         agent = MockAgent(tools=[mock_number_tool])
 
-        updates = [update async for update in agent.run_stream("use add -5 3")]
+        updates = [update async for update in agent.run_stream(f"use {TOOL_NAME_ADD} -5 3")]
 
-        mock_number_tool.call_tool.assert_called_once_with("add", a=-5, b=3)
+        mock_number_tool.call_tool.assert_called_once_with(
+            TOOL_NAME_ADD, a=-5, b=3)
         assert len(updates) >= 1
 
     @pytest.mark.asyncio
@@ -392,7 +405,7 @@ class TestMockAgentNumberTools:
         """MockAgent returns helpful error when only one number provided."""
         agent = MockAgent(tools=[mock_number_tool])
 
-        updates = [update async for update in agent.run_stream("use add 54")]
+        updates = [update async for update in agent.run_stream(f"use {TOOL_NAME_ADD} 54")]
 
         all_text = "".join(str(u.text) for u in updates if u.text)
         assert "requires two numbers" in all_text or "Error" in all_text
@@ -406,7 +419,7 @@ class TestMockAgentNumberTools:
         mock_number_tool.call_tool.return_value = 8
         agent = MockAgent(tools=[mock_number_tool])
 
-        updates = [update async for update in agent.run_stream("use add 5 3")]
+        updates = [update async for update in agent.run_stream(f"use {TOOL_NAME_ADD} 5 3")]
 
         # Find update with function_call content
         function_calls = [
@@ -417,7 +430,7 @@ class TestMockAgentNumberTools:
         ]
         assert len(function_calls) >= 1
         fc = function_calls[0].contents[0]
-        assert fc.name == "add"
+        assert fc.name == TOOL_NAME_ADD
         assert fc.call_id is not None
 
     @pytest.mark.asyncio
@@ -428,7 +441,7 @@ class TestMockAgentNumberTools:
         mock_number_tool.call_tool.return_value = 8
         agent = MockAgent(tools=[mock_number_tool])
 
-        updates = [update async for update in agent.run_stream("use add 5 3")]
+        updates = [update async for update in agent.run_stream(f"use {TOOL_NAME_ADD} 5 3")]
 
         # Find update with function_result content
         function_results = [
@@ -449,7 +462,7 @@ class TestMockAgentNumberTools:
         mock_number_tool.call_tool.return_value = 8
         agent = MockAgent(tools=[mock_number_tool])
 
-        updates = [update async for update in agent.run_stream("use add 5 3")]
+        updates = [update async for update in agent.run_stream(f"use {TOOL_NAME_ADD} 5 3")]
 
         call_ids: set[str] = set()
         result_ids: set[str] = set()

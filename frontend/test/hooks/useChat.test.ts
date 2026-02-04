@@ -2,6 +2,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, cleanup } from '@testing-library/preact'
 import { useChat, type ToolHandler } from '../../src/hooks/useChat'
 import type { AgentSubscriber, Tool } from '@ag-ui/client'
+import { TestDefaults } from '../test-constants'
+
+// Local test constants for this file only
+const UUID = 'test-uuid'
+const TOOL_CALL_ID = 'tc-1'
+const TOOL_NAME = 'myTool'
+const TOOL_NAME_TEST = 'test'
+const USER_MESSAGE = 'Hello'
+const USER_MESSAGE_FIRST = 'First'
+const USER_MESSAGE_SECOND = 'Second'
+const ERROR_FAILED = 'Failed'
+const ERROR_TEST = 'Test error'
+const ERROR_SOMETHING_FAILED = 'Something failed'
+const ERROR_HANDLER_FAILED = 'Handler failed'
 
 // Hoist mock functions so they can be referenced in vi.mock
 const { mockSpanEnd, mockSpanAddEvent, mockStartSpan, mockLogger } = vi.hoisted(() => ({
@@ -66,7 +80,7 @@ vi.mock('@ag-ui/client', async (importOriginal) => {
   }
 })
 
-vi.stubGlobal('crypto', { randomUUID: () => 'test-uuid' })
+vi.stubGlobal('crypto', { randomUUID: () => UUID })
 
 // Helper to trigger subscriber events - functions return void for act() compatibility
 const trigger = {
@@ -97,7 +111,7 @@ const trigger = {
 }
 
 describe('useChat', () => {
-  const url = '/api'
+  const url = TestDefaults.API_URL
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -121,12 +135,12 @@ describe('useChat', () => {
 
   describe('sendMessage', () => {
     it('adds user message and calls runAgent with tools', async () => {
-      const tools: Tool[] = [{ name: 'test', description: 'test', parameters: {} }]
+      const tools: Tool[] = [{ name: TOOL_NAME_TEST, description: TOOL_NAME_TEST, parameters: {} }]
       const { result } = renderHook(() => useChat({ url, tools }))
 
-      await act(() => result.current.sendMessage('Hello'))
+      await act(() => result.current.sendMessage(USER_MESSAGE))
 
-      expect(mockAddMessage).toHaveBeenCalledWith({ id: 'test-uuid', role: 'user', content: 'Hello' })
+      expect(mockAddMessage).toHaveBeenCalledWith({ id: UUID, role: 'user', content: USER_MESSAGE })
       expect(mockRunAgent).toHaveBeenCalledWith({ tools })
     })
 
@@ -135,7 +149,7 @@ describe('useChat', () => {
       mockRunAgent.mockImplementationOnce(() => new Promise(r => { resolve = r }))
       const { result } = renderHook(() => useChat({ url }))
 
-      act(() => { result.current.sendMessage('Hello') })
+      act(() => { result.current.sendMessage(USER_MESSAGE) })
       expect(result.current.isLoading).toBe(true)
 
       await act(async () => { 
@@ -148,12 +162,12 @@ describe('useChat', () => {
 
     it('sets error on failure and calls onError', async () => {
       const onError = vi.fn()
-      mockRunAgent.mockRejectedValueOnce(new Error('Failed'))
+      mockRunAgent.mockRejectedValueOnce(new Error(ERROR_FAILED))
       const { result } = renderHook(() => useChat({ url, onError }))
 
-      await act(() => result.current.sendMessage('Hello'))
+      await act(() => result.current.sendMessage(USER_MESSAGE))
 
-      expect(result.current.error?.message).toBe('Failed')
+      expect(result.current.error?.message).toBe(ERROR_FAILED)
       expect(onError).toHaveBeenCalled()
     })
 
@@ -162,8 +176,8 @@ describe('useChat', () => {
       mockRunAgent.mockImplementation(() => new Promise(r => { resolve = r }))
       const { result } = renderHook(() => useChat({ url }))
 
-      act(() => { result.current.sendMessage('First') })
-      await act(() => result.current.sendMessage('Second'))
+      act(() => { result.current.sendMessage(USER_MESSAGE_FIRST) })
+      await act(() => result.current.sendMessage(USER_MESSAGE_SECOND))
 
       expect(mockAddMessage).toHaveBeenCalledTimes(1)
       await act(async () => { resolve!() })
@@ -177,7 +191,7 @@ describe('useChat', () => {
       const sendMessage1 = result.current.sendMessage
 
       // Trigger loading state change
-      act(() => { result.current.sendMessage('test') })
+      act(() => { result.current.sendMessage(TOOL_NAME_TEST) })
 
       const sendMessage2 = result.current.sendMessage
 
@@ -193,10 +207,10 @@ describe('useChat', () => {
 
   describe('clearMessages', () => {
     it('clears messages and error state', async () => {
-      mockRunAgent.mockRejectedValueOnce(new Error('Error'))
+      mockRunAgent.mockRejectedValueOnce(new Error(ERROR_TEST))
       const { result } = renderHook(() => useChat({ url }))
 
-      await act(() => result.current.sendMessage('Hello'))
+      await act(() => result.current.sendMessage(USER_MESSAGE))
       expect(result.current.error).not.toBeNull()
 
       act(() => result.current.clearMessages())
@@ -214,7 +228,7 @@ describe('useChat', () => {
       act(() => result.current.addToolResult('tc-123', 'Tool output'))
 
       expect(mockAddMessage).toHaveBeenCalledWith({
-        id: 'test-uuid',
+        id: UUID,
         role: 'tool',
         toolCallId: 'tc-123',
         content: 'Tool output',
@@ -256,9 +270,9 @@ describe('useChat', () => {
       const onError = vi.fn()
       const { result } = renderHook(() => useChat({ url, onError }))
 
-      await act(() => trigger.runError('Something failed'))
+      await act(() => trigger.runError(ERROR_SOMETHING_FAILED))
 
-      expect(result.current.error?.message).toBe('Something failed')
+      expect(result.current.error?.message).toBe(ERROR_SOMETHING_FAILED)
       expect(onError).toHaveBeenCalled()
     })
   })
@@ -269,29 +283,29 @@ describe('useChat', () => {
       const onToolCallEnd = vi.fn()
       renderHook(() => useChat({ url, onToolCallStart, onToolCallEnd }))
 
-      await act(() => trigger.toolCallStart('tc-1', 'myTool'))
-      expect(onToolCallStart).toHaveBeenCalledWith('myTool', 'tc-1')
+      await act(() => trigger.toolCallStart(TOOL_CALL_ID, TOOL_NAME))
+      expect(onToolCallStart).toHaveBeenCalledWith(TOOL_NAME, TOOL_CALL_ID)
 
-      await act(() => trigger.toolCallArgs('tc-1', '{"key":'))
-      await act(() => trigger.toolCallArgs('tc-1', '"value"}'))
-      await act(() => trigger.toolCallEnd('tc-1'))
+      await act(() => trigger.toolCallArgs(TOOL_CALL_ID, '{"key":'))
+      await act(() => trigger.toolCallArgs(TOOL_CALL_ID, '"value"}'))
+      await act(() => trigger.toolCallEnd(TOOL_CALL_ID))
 
-      expect(onToolCallEnd).toHaveBeenCalledWith('tc-1', 'myTool', '{"key":"value"}')
+      expect(onToolCallEnd).toHaveBeenCalledWith(TOOL_CALL_ID, TOOL_NAME, '{"key":"value"}')
     })
 
     it('auto-executes tool handler and continues conversation', async () => {
       const handler: ToolHandler = vi.fn().mockResolvedValue('result')
-      const tools: Tool[] = [{ name: 'myTool', description: 'test', parameters: {} }]
-      renderHook(() => useChat({ url, tools, toolHandlers: { myTool: handler } }))
+      const tools: Tool[] = [{ name: TOOL_NAME, description: TOOL_NAME_TEST, parameters: {} }]
+      renderHook(() => useChat({ url, tools, toolHandlers: { [TOOL_NAME]: handler } }))
 
-      await act(() => trigger.toolCallStart('tc-1', 'myTool'))
-      await act(() => trigger.toolCallArgs('tc-1', '{"x":1}'))
-      await act(() => trigger.toolCallEnd('tc-1'))
+      await act(() => trigger.toolCallStart(TOOL_CALL_ID, TOOL_NAME))
+      await act(() => trigger.toolCallArgs(TOOL_CALL_ID, '{"x":1}'))
+      await act(() => trigger.toolCallEnd(TOOL_CALL_ID))
 
       expect(handler).toHaveBeenCalledWith({ x: 1 })
       expect(mockAddMessage).toHaveBeenCalledWith(expect.objectContaining({
         role: 'tool',
-        toolCallId: 'tc-1',
+        toolCallId: TOOL_CALL_ID,
         content: 'result',
       }))
       expect(mockRunAgent).toHaveBeenCalledWith({ tools })
@@ -299,17 +313,17 @@ describe('useChat', () => {
 
     it('handles tool handler errors', async () => {
       const onError = vi.fn()
-      const handler: ToolHandler = vi.fn().mockRejectedValue(new Error('Handler failed'))
-      const { result } = renderHook(() => useChat({ url, onError, toolHandlers: { myTool: handler } }))
+      const handler: ToolHandler = vi.fn().mockRejectedValue(new Error(ERROR_HANDLER_FAILED))
+      const { result } = renderHook(() => useChat({ url, onError, toolHandlers: { [TOOL_NAME]: handler } }))
 
-      await act(() => trigger.toolCallStart('tc-1', 'myTool'))
-      await act(() => trigger.toolCallArgs('tc-1', '{}'))
-      await act(() => trigger.toolCallEnd('tc-1'))
+      await act(() => trigger.toolCallStart(TOOL_CALL_ID, TOOL_NAME))
+      await act(() => trigger.toolCallArgs(TOOL_CALL_ID, '{}'))
+      await act(() => trigger.toolCallEnd(TOOL_CALL_ID))
       
       // Wait for async handler to complete
       await act(() => new Promise(resolve => setTimeout(resolve, 10)))
 
-      expect(result.current.error?.message).toBe('Handler failed')
+      expect(result.current.error?.message).toBe(ERROR_HANDLER_FAILED)
       expect(onError).toHaveBeenCalled()
     })
   })
@@ -333,8 +347,8 @@ describe('useChat', () => {
     it('does not track spans when enableTelemetry is false', async () => {
       renderHook(() => useChat({ url, enableTelemetry: false }))
 
-      await act(() => trigger.toolCallStart('tc-1', 'myTool'))
-      await act(() => trigger.toolCallEnd('tc-1'))
+      await act(() => trigger.toolCallStart(TOOL_CALL_ID, TOOL_NAME))
+      await act(() => trigger.toolCallEnd(TOOL_CALL_ID))
 
       expect(mockStartSpan).not.toHaveBeenCalled()
     })
@@ -342,12 +356,12 @@ describe('useChat', () => {
     it('starts span on tool call start when telemetry enabled', async () => {
       renderHook(() => useChat({ url, enableTelemetry: true }))
 
-      await act(() => trigger.toolCallStart('tc-1', 'myTool'))
+      await act(() => trigger.toolCallStart(TOOL_CALL_ID, TOOL_NAME))
 
       expect(mockStartSpan).toHaveBeenCalledWith('agui.tool_call', {
         attributes: {
-          'tool.call_id': 'tc-1',
-          'tool.name': 'myTool',
+          'tool.call_id': TOOL_CALL_ID,
+          'tool.name': TOOL_NAME,
         },
       })
     })
@@ -355,8 +369,8 @@ describe('useChat', () => {
     it('ends span on tool call end when telemetry enabled', async () => {
       renderHook(() => useChat({ url, enableTelemetry: true }))
 
-      await act(() => trigger.toolCallStart('tc-1', 'myTool'))
-      await act(() => trigger.toolCallEnd('tc-1'))
+      await act(() => trigger.toolCallStart(TOOL_CALL_ID, TOOL_NAME))
+      await act(() => trigger.toolCallEnd(TOOL_CALL_ID))
 
       expect(mockSpanEnd).toHaveBeenCalled()
     })
@@ -364,7 +378,7 @@ describe('useChat', () => {
     it('adds events to active tool spans', async () => {
       renderHook(() => useChat({ url, enableTelemetry: true }))
 
-      await act(() => trigger.toolCallStart('tc-1', 'myTool'))
+      await act(() => trigger.toolCallStart(TOOL_CALL_ID, TOOL_NAME))
       await act(() => trigger.event({ type: 'SOME_EVENT' }))
 
       expect(mockSpanAddEvent).toHaveBeenCalledWith('SOME_EVENT')
@@ -373,7 +387,7 @@ describe('useChat', () => {
     it('ends orphaned spans on cleanup', async () => {
       const { unmount } = renderHook(() => useChat({ url, enableTelemetry: true }))
 
-      await act(() => trigger.toolCallStart('tc-1', 'myTool'))
+      await act(() => trigger.toolCallStart(TOOL_CALL_ID, TOOL_NAME))
       
       unmount()
 

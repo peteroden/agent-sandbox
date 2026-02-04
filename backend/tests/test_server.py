@@ -1,6 +1,9 @@
 """Tests for server module."""
 
+import logging
 import os
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,7 +16,17 @@ from tests.conftest import (
     LLM_PROVIDER_MOCK,
     TEST_AZURE_DEPLOYMENT,
     TEST_AZURE_ENDPOINT,
+    TEST_MCP_SERVER_NAME_TEXT,
+    TEST_MCP_SERVER_URL_GENERIC,
 )
+
+# === Local Constants ===
+YAML_SINGLE_SERVER = """
+servers:
+  - name: {name}
+    url: {url}
+    enabled: {enabled}
+"""
 
 
 class TestCreateAgentProviderSelection:
@@ -199,13 +212,13 @@ class TestAgentInstructions:
 class TestCreateMCPTools:
     """Tests for create_mcp_tools graceful degradation."""
 
-    async def test_create_mcp_tools_handles_connection_failures(self) -> None:
+    async def test_create_mcp_tools_handles_connection_failures(
+        self, clear_server_module_cache: None
+    ) -> None:
         """create_mcp_tools continues when one server fails after retries."""
-        server_urls_seen: list[str] = []
-
         def mock_factory(url: str = "", **_: object) -> MagicMock:
-            server_urls_seen.append(url)
             tool = MagicMock()
+            tool.functions = []
             # First server always fails, second always succeeds
             if "8001" in url:
                 tool.connect = AsyncMock(side_effect=ConnectionError())
@@ -213,24 +226,92 @@ class TestCreateMCPTools:
                 tool.connect = AsyncMock()
             return tool
 
-        with patch("agent_sandbox.server.TracingMCPTool", side_effect=mock_factory):
-            with patch("agent_sandbox.server.asyncio.sleep", new_callable=AsyncMock):
+        with patch("agent_sandbox.registry.mcp_registry.TracingMCPTool", side_effect=mock_factory):
+            with patch("agent_sandbox.registry.mcp_registry.asyncio.sleep", new_callable=AsyncMock):
                 from agent_sandbox.server import create_mcp_tools
 
                 tools = await create_mcp_tools()
 
         assert len(tools) == 1  # Only one server connected
 
-    async def test_create_mcp_tools_returns_empty_when_all_fail(self) -> None:
+    async def test_create_mcp_tools_returns_empty_when_all_fail(
+        self, clear_server_module_cache: None
+    ) -> None:
         """create_mcp_tools returns empty list when all servers fail."""
-        with patch("agent_sandbox.server.TracingMCPTool") as MockTool:
+        with patch("agent_sandbox.registry.mcp_registry.TracingMCPTool") as MockTool:
             mock = MagicMock()
             mock.connect = AsyncMock(side_effect=ConnectionError())
             MockTool.return_value = mock
 
-            with patch("agent_sandbox.server.asyncio.sleep", new_callable=AsyncMock):
+            with patch("agent_sandbox.registry.mcp_registry.asyncio.sleep", new_callable=AsyncMock):
                 from agent_sandbox.server import create_mcp_tools
 
                 tools = await create_mcp_tools()
 
             assert tools == []
+
+
+class TestMCPRegistryIntegration:
+    """Tests for MCP registry integration in server."""
+
+    def test_get_default_config_path_returns_mcp_servers_yaml(
+        self, clear_server_module_cache: None
+    ) -> None:
+        """get_default_config_path returns path to mcp-servers.yaml."""
+        from agent_sandbox.server import get_default_config_path
+
+        config_path = get_default_config_path()
+
+        assert config_path.name == "mcp-servers.yaml"
+        assert config_path.exists()
+
+    async def test_create_mcp_tools_uses_registry(
+        self, tmp_path: Path, clear_server_module_cache: None
+    ) -> None:
+        """create_mcp_tools uses MCPServerRegistry to load config."""
+        config_file = tmp_path / "test-mcp.yaml"
+        config_content = YAML_SINGLE_SERVER.format(
+            name=TEST_MCP_SERVER_NAME_TEXT,
+            url=TEST_MCP_SERVER_URL_GENERIC,
+            enabled="true",
+        )
+        config_file.write_text(config_content)
+        mock_tool = MagicMock()
+        mock_tool.connect = AsyncMock()
+        mock_tool.functions = []
+
+        with patch.dict(os.environ, {"MCP_CONFIG_PATH": str(config_file)}):
+            with patch("agent_sandbox.registry.mcp_registry.TracingMCPTool", return_value=mock_tool):
+                from agent_sandbox.server import create_mcp_tools
+
+                tools = await create_mcp_tools()
+
+                # Should have loaded from our test config
+                assert len(tools) == 1
+
+    async def test_create_mcp_tools_logs_config_at_startup(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, clear_server_module_cache: None
+    ) -> None:
+        """create_mcp_tools logs loaded configuration."""
+        logged_server_name = "logged-server"
+        config_file = tmp_path / "test-mcp.yaml"
+        config_content = YAML_SINGLE_SERVER.format(
+            name=logged_server_name,
+            url=TEST_MCP_SERVER_URL_GENERIC,
+            enabled="true",
+        )
+        config_file.write_text(config_content)
+        mock_tool = MagicMock()
+        mock_tool.connect = AsyncMock()
+        mock_tool.functions = []
+
+        with caplog.at_level(logging.INFO):
+            with patch.dict(os.environ, {"MCP_CONFIG_PATH": str(config_file)}):
+                with patch("agent_sandbox.registry.mcp_registry.TracingMCPTool", return_value=mock_tool):
+                    from agent_sandbox.server import create_mcp_tools
+
+                    await create_mcp_tools()
+
+        # Should log server connection
+        assert any(
+            logged_server_name in record.message for record in caplog.records)

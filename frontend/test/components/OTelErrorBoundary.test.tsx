@@ -3,12 +3,19 @@ import { render } from '@testing-library/preact';
 import { OTelErrorBoundary } from '../../src/components/OTelErrorBoundary.tsx';
 import * as telemetry from '../../src/services/telemetry';
 
+// Local test constants
+const TEST_ERROR_MESSAGE = 'Test error from component';
+const CHILD_RENDERED_MESSAGE = 'Child rendered successfully';
+const DEFAULT_FALLBACK_MESSAGE = 'Something went wrong';
+const CUSTOM_FALLBACK_MESSAGE = 'Custom error fallback';
+const LOGGER_ERROR_MESSAGE = 'React error boundary caught error';
+
 // Component that throws an error for testing
 function ThrowingComponent({ shouldThrow = true }: { shouldThrow?: boolean }) {
   if (shouldThrow) {
-    throw new Error('Test error from component');
+    throw new Error(TEST_ERROR_MESSAGE);
   }
-  return <div>Child rendered successfully</div>;
+  return <div>{CHILD_RENDERED_MESSAGE}</div>;
 }
 
 describe('OTelErrorBoundary', () => {
@@ -33,7 +40,7 @@ describe('OTelErrorBoundary', () => {
       </OTelErrorBoundary>
     );
 
-    expect(container.textContent).toContain('Child rendered successfully');
+    expect(container.textContent).toContain(CHILD_RENDERED_MESSAGE);
   });
 
   it('renders fallback UI when error occurs', () => {
@@ -43,7 +50,7 @@ describe('OTelErrorBoundary', () => {
       </OTelErrorBoundary>
     );
 
-    expect(container.textContent).toContain('Something went wrong');
+    expect(container.textContent).toContain(DEFAULT_FALLBACK_MESSAGE);
   });
 
   it('calls logger.error with error details when error occurs', () => {
@@ -54,16 +61,16 @@ describe('OTelErrorBoundary', () => {
     );
 
     expect(loggerErrorSpy).toHaveBeenCalledWith(
-      'React error boundary caught error',
+      LOGGER_ERROR_MESSAGE,
       expect.objectContaining({
-        'error.message': 'Test error from component',
+        'error.message': TEST_ERROR_MESSAGE,
         'error.type': 'Error',
       })
     );
   });
 
   it('renders custom fallback when provided', () => {
-    const customFallback = <div>Custom error fallback</div>;
+    const customFallback = <div>{CUSTOM_FALLBACK_MESSAGE}</div>;
 
     const { container } = render(
       <OTelErrorBoundary fallback={customFallback}>
@@ -71,7 +78,7 @@ describe('OTelErrorBoundary', () => {
       </OTelErrorBoundary>
     );
 
-    expect(container.textContent).toContain('Custom error fallback');
+    expect(container.textContent).toContain(CUSTOM_FALLBACK_MESSAGE);
   });
 
   it('includes sanitized component stack in error attributes', () => {
@@ -82,7 +89,7 @@ describe('OTelErrorBoundary', () => {
     );
 
     expect(loggerErrorSpy).toHaveBeenCalledWith(
-      'React error boundary caught error',
+      LOGGER_ERROR_MESSAGE,
       expect.objectContaining({
         'error.component_stack': expect.any(String),
       })

@@ -336,6 +336,7 @@ dependencies = [
     { name = "opentelemetry-instrumentation-starlette" },
     { name = "opentelemetry-propagator-b3" },
     { name = "opentelemetry-sdk" },
+    { name = "pyyaml" },
     { name = "uvicorn" },
 ]
 
@@ -374,6 +375,7 @@ requires-dist = [
     { name = "opentelemetry-sdk" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-asyncio", marker = "extra == 'dev'" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "uvicorn" },
 ]

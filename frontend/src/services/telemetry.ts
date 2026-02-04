@@ -42,7 +42,7 @@ let meterProvider: MeterProvider | null = null;
 let otelLogger: Logger | null = null;
 let otelMeter: Meter | null = null;
 let sessionId: string | null = null;
-let currentUser: { id: string; attributes?: LogAttrs } | null = null;
+let currentUser: { id: string; attributes?: Record<string, string> } | null = null;
 
 const SERVICE_NAME = import.meta.env.VITE_SERVICE_NAME ?? 'agent-sandbox-frontend';
 const SERVICE_VERSION = '1.0.0';
@@ -400,7 +400,7 @@ function mapLogLevel(level: TelemetryLogLevel): SeverityNumber {
  */
 export function pushEvent(
   name: string,
-  attributes?: LogAttrs
+  attributes?: Record<string, string>
 ): void {
   if (!otelLogger) return;
 
@@ -422,7 +422,7 @@ export function pushEvent(
  */
 export function pushError(
   error: Error,
-  errorContext?: LogAttrs
+  errorContext?: Record<string, string>
 ): void {
   if (!otelLogger) return;
 
@@ -448,7 +448,7 @@ export function pushError(
  */
 export function setUser(
   id: string,
-  attributes?: LogAttrs
+  attributes?: Record<string, string>
 ): void {
   currentUser = { id, attributes };
 }
@@ -463,7 +463,7 @@ export function clearUser(): void {
 /**
  * Get the current user info.
  */
-export function getCurrentUser(): { id: string; attributes?: LogAttrs } | null {
+export function getCurrentUser(): { id: string; attributes?: Record<string, string> } | null {
   return currentUser;
 }
 
@@ -477,7 +477,7 @@ export function getCurrentUser(): { id: string; attributes?: LogAttrs } | null {
 export function pushMeasurement(
   type: string,
   values: Record<string, number>,
-  measurementContext?: LogAttrs
+  measurementContext?: Record<string, string>
 ): void {
   if (!otelLogger) return;
 
@@ -508,7 +508,7 @@ export function pushMeasurement(
 export function pushLog(
   message: string,
   level: TelemetryLogLevel = 'info',
-  logContext?: LogAttrs
+  logContext?: Record<string, string>
 ): void {
   if (!otelLogger) return;
 
