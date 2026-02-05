@@ -166,7 +166,8 @@ main() {
   if [[ "${RUN_SIGNOZ}" == "true" ]]; then
     start_signoz
     export VITE_OTEL_EXPORTER="otlp"
-    export VITE_OTEL_ENDPOINT="http://localhost:4318"
+    # Use empty endpoint so browser uses relative URLs (/v1/traces) via Vite proxy
+    export VITE_OTEL_ENDPOINT=""
     export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
   fi
 

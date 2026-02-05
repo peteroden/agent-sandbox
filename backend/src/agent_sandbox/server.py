@@ -8,14 +8,18 @@ from pathlib import Path
 from typing import Any
 
 from agent_framework import ChatAgent
-from agent_framework._agents import AgentProtocol
 from agent_framework_ag_ui import add_agent_framework_fastapi_endpoint
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from agent_sandbox.agents.mock_agent import MockAgent
+from agent_sandbox.agents.mock_chat_client import MockChatClient
 from agent_sandbox.registry.mcp_registry import MCPServerRegistry
-from agent_sandbox.telemetry import configure_mcp_telemetry, instrument_mcp_app
+from agent_sandbox.telemetry import (
+    configure_mcp_telemetry,
+    create_instrumented_mcp_asgi,
+    get_tracer,
+    instrument_mcp_app,
+)
 from agent_sandbox.tools.tracing_mcp_tool import TracingMCPTool
 
 
@@ -24,13 +28,25 @@ from agent_sandbox.tools.tracing_mcp_tool import TracingMCPTool
 if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
     configure_mcp_telemetry("agent-sandbox-server")
 
-    # Enable httpx instrumentation for trace context propagation to MCP servers
+    # HTTPX instrumentation provides HTTP-level visibility but does NOT propagate
+    # trace context through MCP tool calls. The agent-framework spawns async tasks
+    # that break OpenTelemetry context before HTTPX makes HTTP requests, so HTTPX
+    # ends up creating orphan traces for HTTP spans.
+    #
+    # For MCP tool trace propagation, we use TracingMCPTool which injects trace
+    # context via the _meta field in MCP JSON-RPC requests. The MCP servers use
+    # @with_otel_context_from_meta to extract and activate this context.
+    #
+    # We keep HTTPX instrumentation for:
+    # - HTTP-level visibility in separate traces (useful for debugging)
+    # - Non-MCP HTTP calls (health checks, external APIs)
     from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
     HTTPXClientInstrumentor().instrument()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+tracer = get_tracer()
 
 
 # Agent configuration
@@ -145,82 +161,120 @@ async def create_mcp_tools(config_path: Path | None = None) -> list[TracingMCPTo
     Returns:
         List of connected TracingMCPTool instances
     """
-    # Determine config path
-    path = config_path
-    if path is None and not os.environ.get("MCP_CONFIG_PATH"):
-        path = get_default_config_path()
+    with tracer.start_as_current_span("server.create_mcp_tools") as span:
+        # Determine config path
+        path = config_path
+        if path is None and not os.environ.get("MCP_CONFIG_PATH"):
+            path = get_default_config_path()
 
-    # Load registry from config
-    registry = MCPServerRegistry.load(path)
+        # Load registry from config
+        registry = MCPServerRegistry.load(path)
 
-    # Log loaded configuration
-    enabled_servers = registry.get_enabled_servers()
-    logger.info(
-        f"Loaded MCP config with {len(enabled_servers)} enabled servers: "
-        f"{[s.name for s in enabled_servers]}"
-    )
+        # Log loaded configuration
+        enabled_servers = registry.get_enabled_servers()
+        logger.info(
+            "Loaded MCP config with %d enabled servers: %s",
+            len(enabled_servers),
+            [s.name for s in enabled_servers],
+        )
+        span.set_attribute("config.enabled_servers", len(enabled_servers))
 
-    # Get tools from registry
-    return await registry.get_all_tools()
+        # Get tools from registry
+        return await registry.get_all_tools()
 
 
 def create_agent(
     mcp_tools: list[TracingMCPTool] | None = None,
-) -> AgentProtocol:
-    """Create the appropriate agent based on environment configuration.
+) -> ChatAgent:
+    """Create the agent with appropriate chat client based on LLM_PROVIDER.
 
     Uses LLM_PROVIDER env var to select:
-    - 'mock' (default): MockAgent for testing
+    - 'mock' (default): ChatAgent with MockChatClient for testing
     - 'azure': ChatAgent with AzureOpenAIChatClient
+
+    Both providers return ChatAgent, enabling unified as_mcp_server() support.
     """
-    provider = os.environ.get("LLM_PROVIDER", "mock").lower()
-    logger.info(f"Using LLM provider: {provider}")
+    with tracer.start_as_current_span("server.create_agent") as span:
+        provider = os.environ.get("LLM_PROVIDER", "mock").lower()
+        logger.info("Using LLM provider: %s", provider)
+        span.set_attribute("llm.provider", provider)
 
-    tools: list[Any] = list(mcp_tools) if mcp_tools else []
+        tools: list[Any] = list(mcp_tools) if mcp_tools else []
+        span.set_attribute("tool_count", len(tools))
 
-    if provider == "mock":
-        return MockAgent(tools=tools)
+        if provider == "mock":
+            chat_client = MockChatClient(tools=tools)
+            return _create_chat_agent(chat_client, tools)
 
-    # Azure OpenAI
-    from agent_framework.azure import AzureOpenAIChatClient
-    from azure.identity import AzureCliCredential
+        # Azure OpenAI
+        from agent_framework.azure import AzureOpenAIChatClient
+        from azure.identity import AzureCliCredential
 
-    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
-    deployment_name = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME")
+        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+        deployment_name = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME")
 
-    if not endpoint:
-        raise ValueError(
-            "AZURE_OPENAI_ENDPOINT environment variable is required"
+        if not endpoint:
+            raise ValueError(
+                "AZURE_OPENAI_ENDPOINT environment variable is required"
+            )
+        if not deployment_name:
+            raise ValueError(
+                "AZURE_OPENAI_DEPLOYMENT_NAME environment variable is required"
+            )
+
+        span.set_attribute("azure.deployment", deployment_name)
+
+        chat_client = AzureOpenAIChatClient(
+            credential=AzureCliCredential(),
+            endpoint=endpoint,
+            deployment_name=deployment_name,
         )
-    if not deployment_name:
-        raise ValueError(
-            "AZURE_OPENAI_DEPLOYMENT_NAME environment variable is required"
-        )
 
-    chat_client = AzureOpenAIChatClient(
-        credential=AzureCliCredential(),
-        endpoint=endpoint,
-        deployment_name=deployment_name,
-    )
-
-    return _create_chat_agent(chat_client, tools)
+        return _create_chat_agent(chat_client, tools)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Connect to MCP servers and register agent endpoint at startup."""
-    try:
-        mcp_tools = await create_mcp_tools()
-        total = sum(len(t.functions) for t in mcp_tools)
-        logger.info(
-            f"Connected to {len(mcp_tools)} MCP servers, {total} tools")
-    except Exception as e:
-        logger.warning(f"MCP connection failed: {e}. Running without tools.")
-        mcp_tools = []
+    with tracer.start_as_current_span(
+        "server.startup",
+        attributes={"server.name": "agent-sandbox-server"},
+    ) as startup_span:
+        try:
+            mcp_tools = await create_mcp_tools()
+            total = sum(len(t.functions) for t in mcp_tools)
+            logger.info(
+                "Connected to %d MCP servers, %d tools",
+                len(mcp_tools),
+                total,
+            )
+            startup_span.set_attribute("mcp.server_count", len(mcp_tools))
+            startup_span.set_attribute("mcp.tool_count", total)
+        except Exception as e:
+            logger.warning(
+                "MCP connection failed: %s. Running without tools.", e)
+            startup_span.set_attribute("mcp.error", str(e))
+            startup_span.record_exception(e)
+            mcp_tools = []
 
-    agent = create_agent(mcp_tools=mcp_tools or None)
-    add_agent_framework_fastapi_endpoint(app, agent, "/")
-    yield
+        agent = create_agent(mcp_tools=mcp_tools or None)
+
+        # Mount AG-UI at /ag-ui (moved from /)
+        add_agent_framework_fastapi_endpoint(app, agent, "/ag-ui")
+        logger.info("Mounted AG-UI endpoint at /ag-ui")
+
+        # Create and mount MCP server at /mcp
+        mcp_server = agent.as_mcp_server(server_name="agent-sandbox")
+        mcp_asgi, session_manager = create_instrumented_mcp_asgi(
+            mcp_server, stateless=True
+        )
+        app.mount("/mcp", mcp_asgi)
+        logger.info("Mounted MCP endpoint at /mcp")
+        startup_span.set_attribute("startup.complete", True)
+
+    # Run session manager within the app's lifespan
+    async with session_manager.run():
+        yield
 
 
 # Create app with lifespan manager

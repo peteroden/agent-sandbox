@@ -20,6 +20,9 @@ from tests.conftest import (
     TEST_MCP_SERVER_URL_GENERIC,
 )
 
+# Expected agent type for both providers (unified)
+EXPECTED_AGENT_TYPE = "ChatAgent"
+
 # === Local Constants ===
 YAML_SINGLE_SERVER = """
 servers:
@@ -33,16 +36,16 @@ class TestCreateAgentProviderSelection:
     """Tests for create_agent LLM provider selection."""
 
     @pytest.mark.parametrize(
-        ("provider", "expected_agent"),
+        "provider",
         [
-            (LLM_PROVIDER_MOCK, "MockAgent"),
-            (LLM_PROVIDER_AZURE, "ChatAgent"),
+            LLM_PROVIDER_MOCK,
+            LLM_PROVIDER_AZURE,
         ],
     )
-    def test_create_agent_selects_correct_agent_type(
-        self, provider: str, expected_agent: str
+    def test_create_agent_returns_chat_agent_for_all_providers(
+        self, provider: str
     ) -> None:
-        """create_agent returns correct agent type based on LLM_PROVIDER."""
+        """create_agent returns ChatAgent for all providers."""
         env = {ENV_LLM_PROVIDER: provider}
         if provider == LLM_PROVIDER_AZURE:
             env[ENV_AZURE_ENDPOINT] = TEST_AZURE_ENDPOINT
@@ -61,19 +64,61 @@ class TestCreateAgentProviderSelection:
                 from agent_sandbox.server import create_agent
 
                 agent = create_agent()
-                assert type(agent).__name__ == expected_agent
+                assert type(agent).__name__ == EXPECTED_AGENT_TYPE
             finally:
                 for p in patches:
                     p.stop()
 
-    def test_create_agent_defaults_to_mock(self) -> None:
-        """create_agent uses mock when LLM_PROVIDER is unset."""
+    def test_create_agent_defaults_to_mock_provider(self) -> None:
+        """create_agent uses MockChatClient when LLM_PROVIDER is unset."""
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop(ENV_LLM_PROVIDER, None)
             from agent_sandbox.server import create_agent
+            from agent_sandbox.agents.mock_chat_client import MockChatClient
 
             agent = create_agent()
-            assert type(agent).__name__ == "MockAgent"
+            assert type(agent).__name__ == EXPECTED_AGENT_TYPE
+            assert isinstance(agent.chat_client, MockChatClient)
+
+
+class TestCreateAgentUnified:
+    """Tests for unified ChatAgent creation."""
+
+    def test_mock_provider_uses_mock_chat_client(self) -> None:
+        """Mock provider creates ChatAgent with MockChatClient."""
+        with patch.dict(os.environ, {ENV_LLM_PROVIDER: LLM_PROVIDER_MOCK}):
+            from agent_sandbox.server import create_agent
+            from agent_sandbox.agents.mock_chat_client import MockChatClient
+
+            agent = create_agent()
+            assert isinstance(agent.chat_client, MockChatClient)
+
+    def test_azure_provider_uses_azure_chat_client(self) -> None:
+        """Azure provider creates ChatAgent with AzureOpenAIChatClient."""
+        env = {
+            ENV_LLM_PROVIDER: LLM_PROVIDER_AZURE,
+            ENV_AZURE_ENDPOINT: TEST_AZURE_ENDPOINT,
+            ENV_AZURE_DEPLOYMENT: TEST_AZURE_DEPLOYMENT,
+        }
+
+        with patch.dict(os.environ, env, clear=False):
+            with patch("agent_framework.azure.AzureOpenAIChatClient") as MockClient:
+                mock_client_instance = MagicMock()
+                MockClient.return_value = mock_client_instance
+
+                from agent_sandbox.server import create_agent
+
+                agent = create_agent()
+                assert agent.chat_client is mock_client_instance
+
+    def test_agent_has_as_mcp_server_method(self) -> None:
+        """ChatAgent has as_mcp_server() method."""
+        with patch.dict(os.environ, {ENV_LLM_PROVIDER: LLM_PROVIDER_MOCK}):
+            from agent_sandbox.server import create_agent
+
+            agent = create_agent()
+            assert hasattr(agent, "as_mcp_server")
+            assert callable(agent.as_mcp_server)
 
 
 class TestCreateAgentAzureValidation:
@@ -117,7 +162,8 @@ class TestCreateAgentWithTools:
 
             agent = create_agent(mcp_tools=mock_tools)  # type: ignore
 
-            assert agent.tools == mock_tools
+            # ChatAgent stores tools in default_options
+            assert agent.default_options["tools"] == mock_tools
 
     def test_create_agent_works_without_tools(self) -> None:
         """Agent works with no tools."""
@@ -126,7 +172,8 @@ class TestCreateAgentWithTools:
 
             agent = create_agent(mcp_tools=None)
 
-            assert agent.tools == []
+            # ChatAgent stores tools in default_options (empty list when None)
+            assert agent.default_options["tools"] == []
 
 
 class TestCreateChatAgentHelper:

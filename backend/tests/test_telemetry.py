@@ -180,3 +180,91 @@ class TestGetTracer:
 
             mock_provider.get_tracer.assert_called_once()
             assert mock_provider.get_tracer.call_args[0][0] == INSTRUMENTATION_SCOPE
+
+
+class TestCreateInstrumentedMcpAsgi:
+    """Tests for create_instrumented_mcp_asgi helper."""
+
+    def test_returns_asgi_callable_and_session_manager(self) -> None:
+        """create_instrumented_mcp_asgi returns a tuple of ASGI app and session manager."""
+        mock_mcp_server = MagicMock()
+
+        from agent_sandbox.telemetry import create_instrumented_mcp_asgi
+
+        result = create_instrumented_mcp_asgi(mock_mcp_server)
+
+        # Returns a tuple
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+
+        asgi_app, session_manager = result
+        # ASGI apps must be callable
+        assert callable(asgi_app)
+        # Session manager should have run method
+        assert hasattr(session_manager, "run")
+
+    def test_creates_session_manager_with_server(self) -> None:
+        """Creates StreamableHTTPSessionManager with the provided MCP server."""
+        mock_mcp_server = MagicMock()
+
+        with patch(
+            "agent_sandbox.telemetry.StreamableHTTPSessionManager"
+        ) as mock_manager_cls:
+            from agent_sandbox.telemetry import create_instrumented_mcp_asgi
+
+            create_instrumented_mcp_asgi(mock_mcp_server)
+
+            mock_manager_cls.assert_called_once()
+            call_kwargs = mock_manager_cls.call_args[1]
+            assert call_kwargs["app"] is mock_mcp_server
+            assert call_kwargs["stateless"] is False  # Default
+
+    def test_passes_stateless_option(self) -> None:
+        """Passes stateless option to session manager."""
+        mock_mcp_server = MagicMock()
+
+        with patch(
+            "agent_sandbox.telemetry.StreamableHTTPSessionManager"
+        ) as mock_manager_cls:
+            from agent_sandbox.telemetry import create_instrumented_mcp_asgi
+
+            create_instrumented_mcp_asgi(mock_mcp_server, stateless=True)
+
+            call_kwargs = mock_manager_cls.call_args[1]
+            assert call_kwargs["stateless"] is True
+
+    def test_instruments_app_when_otel_enabled(self) -> None:
+        """Instruments app when OTEL_EXPORTER_OTLP_ENDPOINT is set."""
+        mock_mcp_server = MagicMock()
+
+        with (
+            patch.dict(
+                os.environ,
+                {ENV_OTEL_EXPORTER_OTLP_ENDPOINT: OTEL_ENDPOINT},
+                clear=True,
+            ),
+            patch(
+                "agent_sandbox.telemetry.StarletteInstrumentor"
+            ) as mock_instr_cls,
+        ):
+            from agent_sandbox.telemetry import create_instrumented_mcp_asgi
+
+            create_instrumented_mcp_asgi(mock_mcp_server)
+
+            mock_instr_cls.instrument_app.assert_called_once()
+
+    def test_no_instrumentation_without_otel(self) -> None:
+        """No instrumentation when OTEL_EXPORTER_OTLP_ENDPOINT is not set."""
+        mock_mcp_server = MagicMock()
+
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch(
+                "agent_sandbox.telemetry.StarletteInstrumentor"
+            ) as mock_instr_cls,
+        ):
+            from agent_sandbox.telemetry import create_instrumented_mcp_asgi
+
+            create_instrumented_mcp_asgi(mock_mcp_server)
+
+            mock_instr_cls.instrument_app.assert_not_called()

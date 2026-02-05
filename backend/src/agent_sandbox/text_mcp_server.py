@@ -1,5 +1,6 @@
 """MCP server for text processing tools."""
 
+import logging
 import os
 from typing import Any
 
@@ -11,6 +12,7 @@ from agent_sandbox.otel_utils import with_otel_context_from_meta
 configure_mcp_telemetry("text-mcp")
 instrument_mcp_app()  # Global instrumentation - patches Starlette class
 tracer = get_tracer()
+logger = logging.getLogger(__name__)
 
 from fastmcp import FastMCP  # noqa: E402 - must be after instrumentation
 from starlette.requests import Request  # noqa: E402
@@ -55,7 +57,12 @@ def echo_text(message: str, _meta: dict[str, Any] | None = None) -> str:
         The message prefixed with 'Echo: '.
     """
     with tracer.start_as_current_span("tool.echo_text", attributes={"message": message}) as span:
-        result = f"Echo: {message}"
+        logger.info("Echoing message: %s", message)
+        # Nested span to verify trace context propagation is working
+        with tracer.start_as_current_span("tool.echo_text.process") as process_span:
+            result = f"Echo: {message}"
+            logger.info("Echo result: %s", result)
+            process_span.set_attribute("result", result)
         span.set_attribute("result", result)
         return result
 

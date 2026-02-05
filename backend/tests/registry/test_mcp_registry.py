@@ -299,7 +299,8 @@ class TestMCPServerRegistryHealthCheck:
         with patch(
             "agent_sandbox.registry.mcp_registry.httpx",
             create_mock_httpx_client(
-                get_handler=AsyncMock(side_effect=Exception("Connection refused"))
+                get_handler=AsyncMock(
+                    side_effect=Exception("Connection refused"))
             ),
         ):
             status = await registry.health_check_all()

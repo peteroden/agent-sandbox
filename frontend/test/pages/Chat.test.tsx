@@ -8,12 +8,12 @@ import { TestDefaults } from '../test-constants'
 const mockUseChat = vi.fn()
 
 vi.mock('../../src/hooks/useChat', () => ({
-  useChat: (options: { url: string; enableTelemetry?: boolean }) => mockUseChat(options),
+  useChat: (options: { url: string }) => mockUseChat(options),
 }))
 
 // Mock logger - inline to avoid hoisting issues
 const mockLoggerInfo = vi.fn()
-vi.mock('../../src/services/telemetry', () => ({
+vi.mock('@agent-sandbox/otel-web-sdk', () => ({
   logger: {
     debug: vi.fn(),
     info: (...args: unknown[]) => mockLoggerInfo(...args),
@@ -35,7 +35,7 @@ vi.mock('react-ag-ui/dist/styles.css', () => ({}))
 
 // Mock agent returned by useChat
 const mockAgent = {
-  url: TestDefaults.API_URL,
+  url: TestDefaults.AG_UI_URL,
   subscribe: () => ({ unsubscribe: () => {} }),
   addMessage: () => {},
   setMessages: () => {},
@@ -62,8 +62,7 @@ describe('Chat', () => {
       render(<Chat />)
 
       expect(mockUseChat).toHaveBeenCalledWith({
-        url: TestDefaults.API_URL,
-        enableTelemetry: true,
+        url: TestDefaults.AG_UI_URL,
       })
     })
 
@@ -79,7 +78,7 @@ describe('Chat', () => {
       render(<Chat />)
 
       expect(mockLoggerInfo).toHaveBeenCalledWith('Chat page loaded', {
-        'agent.url': TestDefaults.API_URL,
+        'agent.url': TestDefaults.AG_UI_URL,
       })
     })
   })

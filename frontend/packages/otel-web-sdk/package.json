@@ -1,0 +1,67 @@
+{
+  "name": "@agent-sandbox/otel-web-sdk",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts"
+    },
+    "./react": {
+      "import": "./dist/react/index.mjs",
+      "types": "./dist/react/index.d.ts"
+    },
+    "./bootstrap": {
+      "import": "./dist/bootstrap.iife.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build && vite build --config vite.bootstrap.config.ts",
+    "build:lib": "vite build",
+    "build:bootstrap": "vite build --config vite.bootstrap.config.ts",
+    "dev": "vite build --watch",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/api-logs": "^0.211.0",
+    "preact": "^10.0.0"
+  },
+  "peerDependenciesMeta": {
+    "preact": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@opentelemetry/auto-instrumentations-web": "^0.56.0",
+    "@opentelemetry/context-zone": "^2.5.0",
+    "@opentelemetry/core": "^2.5.0",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.211.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.211.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.211.0",
+    "@opentelemetry/instrumentation": "^0.211.0",
+    "@opentelemetry/resources": "^2.5.0",
+    "@opentelemetry/sdk-logs": "^0.211.0",
+    "@opentelemetry/sdk-metrics": "^2.5.0",
+    "@opentelemetry/sdk-trace-base": "^2.5.0",
+    "@opentelemetry/sdk-trace-web": "^2.5.0"
+  },
+  "devDependencies": {
+    "@testing-library/preact": "^3.2.4",
+    "@types/node": "^24.10.1",
+    "happy-dom": "^20.4.0",
+    "preact": "^10.27.2",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.4",
+    "vite-plugin-dts": "^4.5.4",
+    "vitest": "^4.0.18"
+  }
+}

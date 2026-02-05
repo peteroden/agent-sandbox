@@ -9,6 +9,14 @@ export const TestDefaults = {
   API_URL_CUSTOM: '/api/custom',
   API_URL_V2: '/api/v2',
 
+  // MCP endpoints
+  MCP_URL: '/mcp',
+  MCP_URL_CUSTOM: '/mcp/custom',
+
+  // AG-UI endpoint
+  AG_UI_URL: '/ag-ui',
+
   // Session ID (used in 4 files)
   SESSION_ID: 'test-session-uuid-12345',
 } as const;
+

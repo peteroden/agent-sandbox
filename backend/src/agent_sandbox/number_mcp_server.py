@@ -1,5 +1,6 @@
 """MCP server for number processing tools."""
 
+import logging
 import os
 from typing import Any
 
@@ -11,6 +12,7 @@ from agent_sandbox.otel_utils import with_otel_context_from_meta
 configure_mcp_telemetry("numbers-mcp")
 instrument_mcp_app()  # Global instrumentation - patches Starlette class
 tracer = get_tracer()
+logger = logging.getLogger(__name__)
 
 from fastmcp import FastMCP  # noqa: E402 - must be after instrumentation
 from starlette.requests import Request  # noqa: E402
@@ -55,7 +57,9 @@ def add_numbers(a: int, b: int, _meta: dict[str, Any] | None = None) -> int:
         The sum of a and b.
     """
     with tracer.start_as_current_span("tool.add_numbers", attributes={"a": a, "b": b}) as span:
+        logger.info("Adding numbers: %d + %d", a, b)
         result = a + b
+        logger.info("Addition result: %d", result)
         span.set_attribute("result", result)
         return result
 
@@ -84,7 +88,9 @@ def subtract_numbers(a: int, b: int, _meta: dict[str, Any] | None = None) -> int
         The difference (a - b).
     """
     with tracer.start_as_current_span("tool.subtract_numbers", attributes={"a": a, "b": b}) as span:
+        logger.info("Subtracting numbers: %d - %d", a, b)
         result = a - b
+        logger.info("Subtraction result: %d", result)
         span.set_attribute("result", result)
         return result
 

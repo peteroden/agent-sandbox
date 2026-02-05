@@ -2,10 +2,15 @@
 
 import logging
 import os
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
+from mcp.server.fastmcp.server import StreamableHTTPASGIApp
+from mcp.server.lowlevel.server import Server
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from opentelemetry import trace
 from opentelemetry._logs import set_logger_provider
+from opentelemetry.instrumentation.starlette import StarletteInstrumentor
 from opentelemetry.propagate import set_global_textmap
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
@@ -17,11 +22,17 @@ from opentelemetry.sdk.trace.export import (
     SimpleSpanProcessor,
 )
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+from starlette.applications import Starlette
+from starlette.routing import Route
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
+
+
+# Type alias for ASGI app
+ASGIApp = Callable[[Any, Any, Any], Any]
 
 
 def configure_mcp_telemetry(service_name: str) -> None:
@@ -76,9 +87,12 @@ def configure_mcp_telemetry(service_name: str) -> None:
             set_logger_provider(log_provider)
 
             # Attach handler to root logger to capture Python logs
+            root_logger = logging.getLogger()
+            # Ensure root logger level is set
+            root_logger.setLevel(logging.INFO)
             handler = LoggingHandler(
                 level=logging.INFO, logger_provider=log_provider)
-            logging.getLogger().addHandler(handler)
+            root_logger.addHandler(handler)
             logger.info("OTLP log exporter configured for %s", otlp_endpoint)
 
     # Configure W3C TraceContext propagation for extracting traceparent headers
@@ -123,3 +137,55 @@ def get_tracer() -> trace.Tracer:
         A tracer instance for creating spans.
     """
     return trace.get_tracer("agent_sandbox")
+
+
+def create_instrumented_mcp_asgi(
+    mcp_server: Server[Any, Any],
+    *,
+    stateless: bool = False,
+) -> tuple[Starlette, StreamableHTTPSessionManager]:
+    """Create an instrumented ASGI app from an MCP Server.
+
+    Wraps the MCP Server in a StreamableHTTPSessionManager and exposes it
+    as a Starlette app that can be mounted on FastAPI.
+
+    Important: The caller is responsible for running the session_manager
+    within their application's lifespan context using:
+        async with aclosing(session_manager.run()):
+            yield
+
+    Optionally instruments the app for OpenTelemetry tracing when
+    OTEL_EXPORTER_OTLP_ENDPOINT is set.
+
+    Args:
+        mcp_server: The MCP Server instance (from agent.as_mcp_server())
+        stateless: Whether to use stateless sessions (default False)
+
+    Returns:
+        A tuple of (Starlette app, session_manager) - the session_manager
+        must be run within the parent app's lifespan.
+    """
+    # Create session manager (handles request/response lifecycle)
+    session_manager = StreamableHTTPSessionManager(
+        app=mcp_server,
+        event_store=None,
+        json_response=False,
+        stateless=stateless,
+    )
+
+    # Create ASGI app that wraps the session manager
+    streamable_http_app = StreamableHTTPASGIApp(session_manager)
+
+    # Create Starlette app for routing
+    starlette_app = Starlette(
+        routes=[
+            Route("/", endpoint=streamable_http_app),
+        ],
+    )
+
+    # Instrument for tracing if OTEL is enabled
+    if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
+        StarletteInstrumentor.instrument_app(starlette_app)
+        logger.info("Instrumented MCP ASGI app for tracing")
+
+    return starlette_app, session_manager

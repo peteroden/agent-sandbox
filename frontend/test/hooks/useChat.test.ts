@@ -21,7 +21,7 @@ const ERROR_HANDLER_FAILED = 'Handler failed'
 const { mockSpanEnd, mockSpanAddEvent, mockStartSpan, mockLogger } = vi.hoisted(() => ({
   mockSpanEnd: vi.fn(),
   mockSpanAddEvent: vi.fn(),
-  mockStartSpan: vi.fn((_name?: string, _options?: Record<string, unknown>) => ({
+  mockStartSpan: vi.fn((_name?: string, _options?: Record<string, unknown>, _ctx?: unknown) => ({
     end: vi.fn(),
     addEvent: vi.fn(),
   })),
@@ -33,23 +33,40 @@ const { mockSpanEnd, mockSpanAddEvent, mockStartSpan, mockLogger } = vi.hoisted(
   },
 }))
 
-vi.mock('../../src/services/telemetry', () => ({
-  getTracer: () => ({
-    startSpan: vi.fn(() => ({
-      setAttribute: vi.fn(),
-      setStatus: vi.fn(),
-      recordException: vi.fn(),
-      end: vi.fn(),
-    })),
-  }),
-  startSpan: (_name?: string, _options?: Record<string, unknown>) => {
-    mockStartSpan(_name, _options)
+// Mock @opentelemetry/api to avoid ZoneContextManager issues in tests
+vi.mock('@opentelemetry/api', () => ({
+  context: {
+    active: vi.fn(() => ({})),
+    with: vi.fn((_ctx, fn) => fn()),
+  },
+  trace: {
+    setSpan: vi.fn((_ctx, _span) => ({})),
+    getSpan: vi.fn(() => undefined),
+  },
+  SpanStatusCode: {
+    OK: 1,
+    ERROR: 2,
+    UNSET: 0,
+  },
+}))
+
+vi.mock('@agent-sandbox/otel-web-sdk', () => ({
+  startSpan: (name?: string, options?: Record<string, unknown>, ctx?: unknown) => {
+    mockStartSpan(name, options, ctx)
     return {
       end: mockSpanEnd,
       addEvent: mockSpanAddEvent,
+      setAttribute: vi.fn(),
+      setStatus: vi.fn(),
+      recordException: vi.fn(),
     }
   },
   logger: mockLogger,
+  SpanStatusCode: {
+    OK: 1,
+    ERROR: 2,
+    UNSET: 0,
+  },
 }))
 
 // Mock HttpAgent
@@ -344,48 +361,29 @@ describe('useChat', () => {
       mockSpanAddEvent.mockClear()
     })
 
-    it('does not track spans when enableTelemetry is false', async () => {
-      renderHook(() => useChat({ url, enableTelemetry: false }))
+    it('tracks tool call span lifecycle', async () => {
+      renderHook(() => useChat({ url }))
 
+      // Start creates span with correct attributes
       await act(() => trigger.toolCallStart(TOOL_CALL_ID, TOOL_NAME))
-      await act(() => trigger.toolCallEnd(TOOL_CALL_ID))
-
-      expect(mockStartSpan).not.toHaveBeenCalled()
-    })
-
-    it('starts span on tool call start when telemetry enabled', async () => {
-      renderHook(() => useChat({ url, enableTelemetry: true }))
-
-      await act(() => trigger.toolCallStart(TOOL_CALL_ID, TOOL_NAME))
-
       expect(mockStartSpan).toHaveBeenCalledWith('agui.tool_call', {
         attributes: {
           'tool.call_id': TOOL_CALL_ID,
           'tool.name': TOOL_NAME,
         },
-      })
-    })
+      }, expect.anything())
 
-    it('ends span on tool call end when telemetry enabled', async () => {
-      renderHook(() => useChat({ url, enableTelemetry: true }))
+      // Events during tool call are recorded
+      await act(() => trigger.event({ type: 'SOME_EVENT' }))
+      expect(mockSpanAddEvent).toHaveBeenCalledWith('SOME_EVENT')
 
-      await act(() => trigger.toolCallStart(TOOL_CALL_ID, TOOL_NAME))
+      // End closes span
       await act(() => trigger.toolCallEnd(TOOL_CALL_ID))
-
       expect(mockSpanEnd).toHaveBeenCalled()
     })
 
-    it('adds events to active tool spans', async () => {
-      renderHook(() => useChat({ url, enableTelemetry: true }))
-
-      await act(() => trigger.toolCallStart(TOOL_CALL_ID, TOOL_NAME))
-      await act(() => trigger.event({ type: 'SOME_EVENT' }))
-
-      expect(mockSpanAddEvent).toHaveBeenCalledWith('SOME_EVENT')
-    })
-
     it('ends orphaned spans on cleanup', async () => {
-      const { unmount } = renderHook(() => useChat({ url, enableTelemetry: true }))
+      const { unmount } = renderHook(() => useChat({ url }))
 
       await act(() => trigger.toolCallStart(TOOL_CALL_ID, TOOL_NAME))
       

@@ -10,12 +10,14 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import httpx
+from opentelemetry import trace
 
 from agent_sandbox.config.loader import load_mcp_config
 from agent_sandbox.config.mcp_config import MCPRegistryConfig, MCPServerConfig
 from agent_sandbox.tools.tracing_mcp_tool import TracingMCPTool
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer("agent_sandbox.registry")
 
 
 class MCPServerRegistry:
@@ -91,30 +93,59 @@ class MCPServerRegistry:
         tools: list[TracingMCPTool] = []
         enabled_servers = self.get_enabled_servers()
 
-        for server in enabled_servers:
-            for attempt in range(max_retries):
-                try:
-                    tool = TracingMCPTool(
-                        name=f"{server.name}-tools",
-                        url=server.url,
-                        description=f"Tools provided by the {server.name} MCP server",
-                    )
-                    await tool.connect()
-                    tools.append(tool)
-                    logger.info(f"Connected to MCP server '{server.name}' at {server.url}")
-                    break
-                except asyncio.CancelledError:
-                    raise
-                except Exception as e:
-                    if attempt < max_retries - 1:
-                        logger.debug(
-                            f"Retry {attempt + 1}/{max_retries} for '{server.name}': {e}"
-                        )
-                        await asyncio.sleep(retry_delay)
-                    else:
-                        logger.warning(
-                            f"MCP server '{server.name}' unavailable at {server.url}: {e}"
-                        )
+        with tracer.start_as_current_span(
+            "mcp_registry.get_all_tools",
+            attributes={"server_count": len(enabled_servers)},
+        ) as registry_span:
+            for server in enabled_servers:
+                with tracer.start_as_current_span(
+                    "mcp_registry.connect_server",
+                    attributes={
+                        "server.name": server.name,
+                        "server.url": server.url,
+                    },
+                ) as server_span:
+                    for attempt in range(max_retries):
+                        try:
+                            tool = TracingMCPTool(
+                                name=f"{server.name}-tools",
+                                url=server.url,
+                                description=f"Tools provided by the {server.name} MCP server",
+                            )
+                            await tool.connect()
+                            tools.append(tool)
+                            logger.info(
+                                "Connected to MCP server '%s' at %s",
+                                server.name,
+                                server.url,
+                            )
+                            server_span.set_attribute("connected", True)
+                            server_span.set_attribute("attempts", attempt + 1)
+                            break
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as e:
+                            if attempt < max_retries - 1:
+                                logger.debug(
+                                    "Retry %d/%d for '%s': %s",
+                                    attempt + 1,
+                                    max_retries,
+                                    server.name,
+                                    e,
+                                )
+                                await asyncio.sleep(retry_delay)
+                            else:
+                                logger.warning(
+                                    "MCP server '%s' unavailable at %s: %s",
+                                    server.name,
+                                    server.url,
+                                    e,
+                                )
+                                server_span.set_attribute("connected", False)
+                                server_span.set_attribute("error", str(e))
+                                server_span.record_exception(e)
+
+            registry_span.set_attribute("connected_count", len(tools))
 
         return tools
 
@@ -131,18 +162,41 @@ class MCPServerRegistry:
         """
         results: dict[str, bool] = {}
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            for server in self._servers:
-                try:
-                    # Build health URL from base URL and health endpoint
-                    parsed = urlparse(server.url)
-                    base_url = f"{parsed.scheme}://{parsed.netloc}"
-                    health_url = urljoin(base_url, server.health_endpoint)
+        with tracer.start_as_current_span(
+            "mcp_registry.health_check_all",
+            attributes={"server_count": len(self._servers)},
+        ) as registry_span:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                for server in self._servers:
+                    with tracer.start_as_current_span(
+                        "mcp_registry.health_check",
+                        attributes={"server.name": server.name},
+                    ) as server_span:
+                        try:
+                            # Build health URL from base URL and health endpoint
+                            parsed = urlparse(server.url)
+                            base_url = f"{parsed.scheme}://{parsed.netloc}"
+                            health_url = urljoin(
+                                base_url, server.health_endpoint)
 
-                    response = await client.get(health_url)
-                    results[server.name] = response.status_code == 200
-                except Exception as e:
-                    logger.warning(f"Health check failed for '{server.name}': {e}")
-                    results[server.name] = False
+                            response = await client.get(health_url)
+                            is_healthy = response.status_code == 200
+                            results[server.name] = is_healthy
+                            server_span.set_attribute("healthy", is_healthy)
+                            server_span.set_attribute(
+                                "status_code", response.status_code)
+                        except Exception as e:
+                            logger.warning(
+                                "Health check failed for '%s': %s",
+                                server.name,
+                                e,
+                            )
+                            results[server.name] = False
+                            server_span.set_attribute("healthy", False)
+                            server_span.set_attribute("error", str(e))
+                            server_span.record_exception(e)
+
+            healthy_count = sum(1 for v in results.values() if v)
+            registry_span.set_attribute("healthy_count", healthy_count)
 
         return results
