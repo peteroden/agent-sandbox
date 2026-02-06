@@ -1,13 +1,11 @@
 """Tests for TracingTool wrapper."""
 
+from mcp_trace_context import TracingTool
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 # TracingTool requires agent-framework, so we skip if not available
 pytest.importorskip("agent_framework")
-
-from unittest.mock import AsyncMock, MagicMock, patch
-
-from mcp_trace_context import TracingTool
 
 
 class TestTracingTool:

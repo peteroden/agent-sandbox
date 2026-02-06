@@ -243,7 +243,8 @@ class MockChatClient(BaseChatClient):
                 span.set_attribute("tool.success", False)
                 span.set_attribute("error", str(e))
                 span.record_exception(e)
-                logger.error("Tool execution failed: %s error=%s", tool_name, str(e))
+                logger.error("Tool execution failed: %s error=%s",
+                             tool_name, str(e))
                 return f"Tool error: {e}"
 
     async def _inner_get_streaming_response(
