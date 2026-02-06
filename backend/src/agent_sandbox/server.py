@@ -8,43 +8,25 @@ from pathlib import Path
 from typing import Any
 
 from agent_framework import ChatAgent
+from agent_framework.observability import configure_otel_providers, get_tracer
 from agent_framework_ag_ui import add_agent_framework_fastapi_endpoint
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from mcp.server.fastmcp.server import StreamableHTTPASGIApp
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp_trace_context import TracingTool
+from opentelemetry.instrumentation.starlette import StarletteInstrumentor
+from starlette.applications import Starlette
+from starlette.routing import Route
 
 from agent_sandbox.agents.mock_chat_client import MockChatClient
 from agent_sandbox.registry.mcp_registry import MCPServerRegistry
-from agent_sandbox.telemetry import (
-    configure_mcp_telemetry,
-    create_instrumented_mcp_asgi,
-    get_tracer,
-    instrument_mcp_app,
-)
-from agent_sandbox.tools.tracing_mcp_tool import TracingMCPTool
 
+# Configure OpenTelemetry using Agent Framework (must be done BEFORE app creation)
+# Reads from environment: ENABLE_INSTRUMENTATION, OTEL_EXPORTER_OTLP_*_ENDPOINT
+configure_otel_providers()
 
-# Configure OpenTelemetry observability (must be done BEFORE app creation)
-# Uses HTTP/protobuf protocol for SigNoz compatibility
-if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
-    configure_mcp_telemetry("agent-sandbox-server")
-
-    # HTTPX instrumentation provides HTTP-level visibility but does NOT propagate
-    # trace context through MCP tool calls. The agent-framework spawns async tasks
-    # that break OpenTelemetry context before HTTPX makes HTTP requests, so HTTPX
-    # ends up creating orphan traces for HTTP spans.
-    #
-    # For MCP tool trace propagation, we use TracingMCPTool which injects trace
-    # context via the _meta field in MCP JSON-RPC requests. The MCP servers use
-    # @with_otel_context_from_meta to extract and activate this context.
-    #
-    # We keep HTTPX instrumentation for:
-    # - HTTP-level visibility in separate traces (useful for debugging)
-    # - Non-MCP HTTP calls (health checks, external APIs)
-    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-    HTTPXClientInstrumentor().instrument()
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Set up logging
 logger = logging.getLogger(__name__)
 tracer = get_tracer()
 
@@ -144,14 +126,14 @@ def get_default_config_path() -> Path:
     return Path(__file__).parent.parent.parent / "mcp-servers.yaml"
 
 
-async def create_mcp_tools(config_path: Path | None = None) -> list[TracingMCPTool]:
+async def create_mcp_tools(config_path: Path | None = None) -> list[TracingTool]:
     """Create and connect to all configured MCP servers.
 
     Loads server configuration from YAML file using MCPServerRegistry.
     Handles individual server failures gracefully - if a server is unavailable,
     it logs a warning and continues with the remaining servers.
 
-    Uses TracingMCPTool which injects trace context via _meta field for
+    Uses TracingTool which injects trace context via _meta field for
     proper distributed tracing across MCP boundaries.
 
     Args:
@@ -159,7 +141,7 @@ async def create_mcp_tools(config_path: Path | None = None) -> list[TracingMCPTo
                      env var or defaults to mcp-servers.yaml in backend directory.
 
     Returns:
-        List of connected TracingMCPTool instances
+        List of connected TracingTool instances
     """
     with tracer.start_as_current_span("server.create_mcp_tools") as span:
         # Determine config path
@@ -173,7 +155,7 @@ async def create_mcp_tools(config_path: Path | None = None) -> list[TracingMCPTo
         # Log loaded configuration
         enabled_servers = registry.get_enabled_servers()
         logger.info(
-            "Loaded MCP config with %d enabled servers: %s",
+            "Loaded MCP config: enabled_servers=%d, names=%s",
             len(enabled_servers),
             [s.name for s in enabled_servers],
         )
@@ -184,7 +166,7 @@ async def create_mcp_tools(config_path: Path | None = None) -> list[TracingMCPTo
 
 
 def create_agent(
-    mcp_tools: list[TracingMCPTool] | None = None,
+    mcp_tools: list[TracingTool] | None = None,
 ) -> ChatAgent:
     """Create the agent with appropriate chat client based on LLM_PROVIDER.
 
@@ -233,6 +215,36 @@ def create_agent(
         return _create_chat_agent(chat_client, tools)
 
 
+def create_mcp_asgi(
+    mcp_server: Any,
+    *,
+    stateless: bool = False,
+) -> tuple[Starlette, StreamableHTTPSessionManager]:
+    """Create an ASGI app from an MCP Server.
+
+    Args:
+        mcp_server: The MCP Server instance (from agent.as_mcp_server())
+        stateless: Whether to use stateless sessions (default False)
+
+    Returns:
+        A tuple of (Starlette app, session_manager)
+    """
+    session_manager = StreamableHTTPSessionManager(
+        app=mcp_server,
+        event_store=None,
+        json_response=False,
+        stateless=stateless,
+    )
+    asgi_app = StreamableHTTPASGIApp(session_manager)
+    starlette_app = Starlette(routes=[Route("/", endpoint=asgi_app)])
+
+    # Instrument for tracing if OTEL is enabled
+    if os.environ.get("ENABLE_INSTRUMENTATION", "").lower() == "true":
+        StarletteInstrumentor.instrument_app(starlette_app)
+
+    return starlette_app, session_manager
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Connect to MCP servers and register agent endpoint at startup."""
@@ -244,7 +256,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             mcp_tools = await create_mcp_tools()
             total = sum(len(t.functions) for t in mcp_tools)
             logger.info(
-                "Connected to %d MCP servers, %d tools",
+                "Connected to MCP servers: server_count=%d, tool_count=%d",
                 len(mcp_tools),
                 total,
             )
@@ -252,7 +264,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             startup_span.set_attribute("mcp.tool_count", total)
         except Exception as e:
             logger.warning(
-                "MCP connection failed: %s. Running without tools.", e)
+                "MCP connection failed, running without tools: %s",
+                str(e),
+            )
             startup_span.set_attribute("mcp.error", str(e))
             startup_span.record_exception(e)
             mcp_tools = []
@@ -265,7 +279,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         # Create and mount MCP server at /mcp
         mcp_server = agent.as_mcp_server(server_name="agent-sandbox")
-        mcp_asgi, session_manager = create_instrumented_mcp_asgi(
+        mcp_asgi, session_manager = create_mcp_asgi(
             mcp_server, stateless=True
         )
         app.mount("/mcp", mcp_asgi)
@@ -293,8 +307,8 @@ app.add_middleware(
 
 # Instrument Starlette/FastAPI for tracing AFTER CORS middleware
 # This ensures trace context extraction happens on the actual request
-if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
-    instrument_mcp_app(app)
+if os.environ.get("ENABLE_INSTRUMENTATION", "").lower() == "true":
+    StarletteInstrumentor.instrument_app(app)
 
 
 @app.get("/health")

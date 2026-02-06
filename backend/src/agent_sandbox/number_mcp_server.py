@@ -4,19 +4,20 @@ import logging
 import os
 from typing import Any
 
-# Configure telemetry BEFORE FastMCP creates its internal Starlette app
-# This ensures StarletteInstrumentor patches the class before instantiation
-from agent_sandbox.telemetry import configure_mcp_telemetry, get_tracer, instrument_mcp_app
-from agent_sandbox.otel_utils import with_otel_context_from_meta
+from agent_framework.observability import configure_otel_providers, get_tracer
+from mcp_trace_context import propagate
+from opentelemetry import trace
 
-configure_mcp_telemetry("numbers-mcp")
-instrument_mcp_app()  # Global instrumentation - patches Starlette class
-tracer = get_tracer()
-logger = logging.getLogger(__name__)
+# Configure OpenTelemetry BEFORE FastMCP creates its internal Starlette app
+configure_otel_providers()
 
 from fastmcp import FastMCP  # noqa: E402 - must be after instrumentation
 from starlette.requests import Request  # noqa: E402
 from starlette.responses import JSONResponse, Response  # noqa: E402
+
+# Set up logging
+logger = logging.getLogger(__name__)
+tracer = get_tracer()
 
 # Create MCP server instance
 mcp = FastMCP(
@@ -35,7 +36,7 @@ async def health_check(request: Request) -> Response:
 
 
 @mcp.tool()
-@with_otel_context_from_meta
+@propagate
 def add_numbers(a: int, b: int, _meta: dict[str, Any] | None = None) -> int:
     """MATH TOOL: Adds two integers and returns their sum.
 
@@ -56,16 +57,17 @@ def add_numbers(a: int, b: int, _meta: dict[str, Any] | None = None) -> int:
     Returns:
         The sum of a and b.
     """
-    with tracer.start_as_current_span("tool.add_numbers", attributes={"a": a, "b": b}) as span:
-        logger.info("Adding numbers: %d + %d", a, b)
-        result = a + b
-        logger.info("Addition result: %d", result)
+    logger.info("Adding numbers: a=%d, b=%d", a, b)
+    result = a + b
+    logger.info("Addition result: %d", result)
+    span = trace.get_current_span()
+    if span:
         span.set_attribute("result", result)
-        return result
+    return result
 
 
 @mcp.tool()
-@with_otel_context_from_meta
+@propagate
 def subtract_numbers(a: int, b: int, _meta: dict[str, Any] | None = None) -> int:
     """MATH TOOL: Subtracts second integer from first and returns the difference.
 
@@ -87,12 +89,13 @@ def subtract_numbers(a: int, b: int, _meta: dict[str, Any] | None = None) -> int
     Returns:
         The difference (a - b).
     """
-    with tracer.start_as_current_span("tool.subtract_numbers", attributes={"a": a, "b": b}) as span:
-        logger.info("Subtracting numbers: %d - %d", a, b)
-        result = a - b
-        logger.info("Subtraction result: %d", result)
+    logger.info("Subtracting numbers: a=%d, b=%d", a, b)
+    result = a - b
+    logger.info("Subtraction result: %d", result)
+    span = trace.get_current_span()
+    if span:
         span.set_attribute("result", result)
-        return result
+    return result
 
 
 if __name__ == "__main__":

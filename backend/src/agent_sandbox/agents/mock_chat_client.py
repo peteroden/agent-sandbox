@@ -17,12 +17,13 @@ from agent_framework import (
     Content,
     Role,
 )
-from opentelemetry import trace
+from agent_framework.observability import get_tracer
 
 from agent_sandbox.agents.mock_utils import detect_tool_request, parse_integers
 
+# Set up logging and tracing
 logger = logging.getLogger(__name__)
-tracer = trace.get_tracer("agent_sandbox.agents")
+tracer = get_tracer()
 
 
 class MockChatClient(BaseChatClient):
@@ -210,8 +211,11 @@ class MockChatClient(BaseChatClient):
         ) as span:
             try:
                 if hasattr(tool_provider, "call_tool"):
-                    logger.info("Executing tool '%s' with args: %s",
-                                tool_name, args_dict)
+                    logger.info(
+                        "Executing tool: %s with args: %s",
+                        tool_name,
+                        str(args_dict),
+                    )
                     result = await tool_provider.call_tool(tool_name, **args_dict)
                     # Handle Content objects
                     if isinstance(result, list):
@@ -225,8 +229,11 @@ class MockChatClient(BaseChatClient):
                     else:
                         result_str = str(result)
                     span.set_attribute("tool.success", True)
-                    logger.info("Tool '%s' returned: %s",
-                                tool_name, result_str)
+                    logger.info(
+                        "Tool returned: %s result=%s",
+                        tool_name,
+                        result_str,
+                    )
                     return result_str
                 result_str = f"Mock tool {tool_name} called with: {args_dict}"
                 span.set_attribute("tool.success", True)
@@ -236,7 +243,7 @@ class MockChatClient(BaseChatClient):
                 span.set_attribute("tool.success", False)
                 span.set_attribute("error", str(e))
                 span.record_exception(e)
-                logger.exception("Tool execution failed: %s", tool_name)
+                logger.error("Tool execution failed: %s error=%s", tool_name, str(e))
                 return f"Tool error: {e}"
 
     async def _inner_get_streaming_response(

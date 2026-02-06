@@ -4,19 +4,19 @@ import logging
 import os
 from typing import Any
 
-# Configure telemetry BEFORE FastMCP creates its internal Starlette app
-# This ensures StarletteInstrumentor patches the class before instantiation
-from agent_sandbox.telemetry import configure_mcp_telemetry, get_tracer, instrument_mcp_app
-from agent_sandbox.otel_utils import with_otel_context_from_meta
+from agent_framework.observability import configure_otel_providers, get_tracer
+from mcp_trace_context import propagate
 
-configure_mcp_telemetry("text-mcp")
-instrument_mcp_app()  # Global instrumentation - patches Starlette class
-tracer = get_tracer()
-logger = logging.getLogger(__name__)
+# Configure OpenTelemetry BEFORE FastMCP creates its internal Starlette app
+configure_otel_providers()
 
 from fastmcp import FastMCP  # noqa: E402 - must be after instrumentation
 from starlette.requests import Request  # noqa: E402
 from starlette.responses import JSONResponse, Response  # noqa: E402
+
+# Set up logging
+logger = logging.getLogger(__name__)
+tracer = get_tracer()
 
 # Create MCP server instance
 mcp = FastMCP(
@@ -35,7 +35,7 @@ async def health_check(request: Request) -> Response:
 
 
 @mcp.tool()
-@with_otel_context_from_meta
+@propagate
 def echo_text(message: str, _meta: dict[str, Any] | None = None) -> str:
     """TEXT TOOL: Echoes a text message back to the user.
 
@@ -56,15 +56,13 @@ def echo_text(message: str, _meta: dict[str, Any] | None = None) -> str:
     Returns:
         The message prefixed with 'Echo: '.
     """
-    with tracer.start_as_current_span("tool.echo_text", attributes={"message": message}) as span:
-        logger.info("Echoing message: %s", message)
-        # Nested span to verify trace context propagation is working
-        with tracer.start_as_current_span("tool.echo_text.process") as process_span:
-            result = f"Echo: {message}"
-            logger.info("Echo result: %s", result)
-            process_span.set_attribute("result", result)
-        span.set_attribute("result", result)
-        return result
+    logger.info("Echoing message: %s", message)
+    # Nested span to verify trace context propagation is working
+    with tracer.start_as_current_span("tool.echo_text.process") as process_span:
+        result = f"Echo: {message}"
+        logger.info("Echo result: %s", result)
+        process_span.set_attribute("result", result)
+    return result
 
 
 if __name__ == "__main__":

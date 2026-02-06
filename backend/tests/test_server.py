@@ -273,7 +273,7 @@ class TestCreateMCPTools:
                 tool.connect = AsyncMock()
             return tool
 
-        with patch("agent_sandbox.registry.mcp_registry.TracingMCPTool", side_effect=mock_factory):
+        with patch("agent_sandbox.registry.mcp_registry.TracingTool", side_effect=mock_factory):
             with patch("agent_sandbox.registry.mcp_registry.asyncio.sleep", new_callable=AsyncMock):
                 from agent_sandbox.server import create_mcp_tools
 
@@ -285,7 +285,7 @@ class TestCreateMCPTools:
         self, clear_server_module_cache: None
     ) -> None:
         """create_mcp_tools returns empty list when all servers fail."""
-        with patch("agent_sandbox.registry.mcp_registry.TracingMCPTool") as MockTool:
+        with patch("agent_sandbox.registry.mcp_registry.TracingTool") as MockTool:
             mock = MagicMock()
             mock.connect = AsyncMock(side_effect=ConnectionError())
             MockTool.return_value = mock
@@ -328,7 +328,7 @@ class TestMCPRegistryIntegration:
         mock_tool.functions = []
 
         with patch.dict(os.environ, {"MCP_CONFIG_PATH": str(config_file)}):
-            with patch("agent_sandbox.registry.mcp_registry.TracingMCPTool", return_value=mock_tool):
+            with patch("agent_sandbox.registry.mcp_registry.TracingTool", return_value=mock_tool):
                 from agent_sandbox.server import create_mcp_tools
 
                 tools = await create_mcp_tools()
@@ -354,7 +354,7 @@ class TestMCPRegistryIntegration:
 
         with caplog.at_level(logging.INFO):
             with patch.dict(os.environ, {"MCP_CONFIG_PATH": str(config_file)}):
-                with patch("agent_sandbox.registry.mcp_registry.TracingMCPTool", return_value=mock_tool):
+                with patch("agent_sandbox.registry.mcp_registry.TracingTool", return_value=mock_tool):
                     from agent_sandbox.server import create_mcp_tools
 
                     await create_mcp_tools()

@@ -158,13 +158,13 @@ class TestMCPServerRegistryTools:
     async def test_get_all_tools_creates_tracing_tools(
         self, two_server_config: MCPRegistryConfig
     ) -> None:
-        """get_all_tools returns TracingMCPTool instances for enabled servers."""
+        """get_all_tools returns TracingTool instances for enabled servers."""
         mock_tool = MagicMock()
         mock_tool.connect = AsyncMock()
         mock_tool.functions = ["fn1"]
 
         with patch(
-            "agent_sandbox.registry.mcp_registry.TracingMCPTool",
+            "agent_sandbox.registry.mcp_registry.TracingTool",
             return_value=mock_tool,
         ) as MockTracingTool:
             from agent_sandbox.registry.mcp_registry import MCPServerRegistry
@@ -172,7 +172,7 @@ class TestMCPServerRegistryTools:
             registry = MCPServerRegistry.from_config(two_server_config)
             tools = await registry.get_all_tools()
 
-            # Should create TracingMCPTool for each enabled server
+            # Should create TracingTool for each enabled server
             assert MockTracingTool.call_count == 2
             assert len(tools) == 2
 
@@ -185,7 +185,7 @@ class TestMCPServerRegistryTools:
         mock_tool.functions = []
 
         with patch(
-            "agent_sandbox.registry.mcp_registry.TracingMCPTool",
+            "agent_sandbox.registry.mcp_registry.TracingTool",
             return_value=mock_tool,
         ) as MockTracingTool:
             from agent_sandbox.registry.mcp_registry import MCPServerRegistry
@@ -217,7 +217,7 @@ class TestMCPServerRegistryTools:
             return tool
 
         with patch(
-            "agent_sandbox.registry.mcp_registry.TracingMCPTool",
+            "agent_sandbox.registry.mcp_registry.TracingTool",
             side_effect=mock_factory,
         ):
             with patch("agent_sandbox.registry.mcp_registry.asyncio.sleep", new_callable=AsyncMock):

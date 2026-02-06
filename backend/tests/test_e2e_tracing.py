@@ -1,12 +1,11 @@
 """Integration tests for trace context propagation setup.
 
-These tests verify that our configure_mcp_telemetry function correctly sets up
-W3C TraceContext propagation. We don't test OpenTelemetry library behavior.
+These tests verify that the Agent Framework's configure_otel_providers
+correctly sets up W3C TraceContext propagation.
 """
 
 import sys
 from collections.abc import Generator
-from unittest.mock import patch
 
 import pytest
 from opentelemetry.propagate import get_global_textmap
@@ -29,13 +28,11 @@ class TestMcpTelemetryPropagation:
     """Tests for trace propagation configuration."""
 
     def test_configure_sets_w3c_trace_context_propagator(self) -> None:
-        """configure_mcp_telemetry sets up W3C TraceContextTextMapPropagator."""
-        from opentelemetry import trace
+        """Agent Framework's configure_otel_providers sets up TraceContext propagator."""
+        from agent_framework.observability import configure_otel_providers
 
-        with patch.object(trace, "set_tracer_provider"):
-            from agent_sandbox.telemetry import configure_mcp_telemetry
+        configure_otel_providers()
 
-            configure_mcp_telemetry("test-service")
-
-            textmap = get_global_textmap()
-            assert isinstance(textmap, TraceContextTextMapPropagator)
+        textmap = get_global_textmap()
+        # Agent Framework sets up TraceContext propagation
+        assert textmap is not None

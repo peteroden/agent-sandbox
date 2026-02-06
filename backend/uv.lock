@@ -329,12 +329,11 @@ dependencies = [
     { name = "fastapi" },
     { name = "fastmcp" },
     { name = "httpx" },
+    { name = "mcp-trace-context" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "opentelemetry-instrumentation-httpx" },
     { name = "opentelemetry-instrumentation-starlette" },
-    { name = "opentelemetry-propagator-b3" },
     { name = "opentelemetry-sdk" },
     { name = "pyyaml" },
     { name = "uvicorn" },
@@ -367,12 +366,11 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=2.2" },
     { name = "httpx" },
     { name = "ipykernel", marker = "extra == 'dev'" },
+    { name = "mcp-trace-context", editable = "packages/mcp-trace-context" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.39.1" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "opentelemetry-instrumentation-httpx" },
     { name = "opentelemetry-instrumentation-starlette" },
-    { name = "opentelemetry-propagator-b3" },
     { name = "opentelemetry-sdk" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-asyncio", marker = "extra == 'dev'" },
@@ -1709,6 +1707,24 @@ ws = [
 ]
 
 [[package]]
+name = "mcp-trace-context"
+version = "1.0.0"
+source = { editable = "packages/mcp-trace-context" }
+dependencies = [
+    { name = "opentelemetry-api" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agent-framework", marker = "extra == 'agent-framework'", specifier = ">=1.0.0b0" },
+    { name = "opentelemetry-api", specifier = ">=1.20.0" },
+    { name = "opentelemetry-sdk", marker = "extra == 'dev'", specifier = ">=1.20.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
+]
+provides-extras = ["agent-framework", "dev"]
+
+[[package]]
 name = "mdurl"
 version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2075,22 +2091,6 @@ wheels = [
 ]
 
 [[package]]
-name = "opentelemetry-instrumentation-httpx"
-version = "0.60b1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-instrumentation" },
-    { name = "opentelemetry-semantic-conventions" },
-    { name = "opentelemetry-util-http" },
-    { name = "wrapt" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/86/08/11208bcfcab4fc2023252c3f322aa397fd9ad948355fea60f5fc98648603/opentelemetry_instrumentation_httpx-0.60b1.tar.gz", hash = "sha256:a506ebaf28c60112cbe70ad4f0338f8603f148938cb7b6794ce1051cd2b270ae", size = 20611, upload-time = "2025-12-11T13:37:01.661Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/43/59/b98e84eebf745ffc75397eaad4763795bff8a30cbf2373a50ed4e70646c5/opentelemetry_instrumentation_httpx-0.60b1-py3-none-any.whl", hash = "sha256:f37636dd742ad2af83d896ba69601ed28da51fa4e25d1ab62fde89ce413e275b", size = 15701, upload-time = "2025-12-11T13:36:04.56Z" },
-]
-
-[[package]]
 name = "opentelemetry-instrumentation-starlette"
 version = "0.60b1"
 source = { registry = "https://pypi.org/simple" }
@@ -2104,19 +2104,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/39/5e/7e5c97ea0d4dcf735fea4d0e8cd91974bcb7d13436cf3b7c85244cf2ace5/opentelemetry_instrumentation_starlette-0.60b1.tar.gz", hash = "sha256:282a25339acd8885e64f7dbaf3efb0e4b9f0bde04b9987ba846ba73d50978faa", size = 14643, upload-time = "2025-12-11T13:37:14.311Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/1a/246dd7fcf7dd6c399771e966689cc02d53d6db271f3d3161ca2a755d50c8/opentelemetry_instrumentation_starlette-0.60b1-py3-none-any.whl", hash = "sha256:a5bcf8c75da0501b5c6abb1ea53be699be22698229df59c8478be93ae2e486a8", size = 11765, upload-time = "2025-12-11T13:36:26.693Z" },
-]
-
-[[package]]
-name = "opentelemetry-propagator-b3"
-version = "1.39.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "opentelemetry-api" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a8/d7/d416083250dc639d5d3cc8e95e04b6f02a6446921949e27cdb8797ceedbb/opentelemetry_propagator_b3-1.39.1.tar.gz", hash = "sha256:bbe24c025cb3db0c26862907bd4f9fc94776a63b2926927040095a350578cfd2", size = 9576, upload-time = "2025-12-11T13:32:47.599Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4e/96/daf9fa8374ddd1d1a7066c0fd8de0f9172ae26dfe81440e37425a0bba1f1/opentelemetry_propagator_b3-1.39.1-py3-none-any.whl", hash = "sha256:dd9498f073915a2d088efbb746742f418ad0318c721d9bae7960dc4e1b959eb5", size = 8917, upload-time = "2025-12-11T13:32:31.794Z" },
 ]
 
 [[package]]
