@@ -1,47 +1,55 @@
-"""Mock agent for development without Azure OpenAI."""
+"""Mock chat client for development without Azure OpenAI.
+
+Implements BaseChatClient to provide mock LLM responses for testing
+the AG-UI integration without LLM API calls.
+"""
 
 import logging
-import re
 import uuid
-from collections.abc import AsyncIterable, Sequence
-from dataclasses import dataclass, field
-from typing import Any
+from collections.abc import AsyncIterable, MutableSequence
+from typing import Any, ClassVar
 
 from agent_framework import (
-    AgentResponse,
-    AgentResponseUpdate,
-    AgentThread,
-    BaseAgent,
+    BaseChatClient,
     ChatMessage,
+    ChatResponse,
+    ChatResponseUpdate,
     Content,
     Role,
 )
+from agent_framework.observability import get_tracer
 
+from agent_sandbox.agents.mock_utils import detect_tool_request, parse_integers
+
+# Set up logging and tracing
 logger = logging.getLogger(__name__)
+tracer = get_tracer()
 
 
-@dataclass
-class MockAgent(BaseAgent):
-    """Mock agent for development without Azure OpenAI.
+class MockChatClient(BaseChatClient):
+    """Mock chat client for development without Azure OpenAI.
 
     Echoes back user messages with a prefix. Useful for testing
     the AG-UI integration without LLM API calls.
 
-    Accepts tools in the same format as ChatAgent (list of MCPStreamableHTTPTool
-    or other tool providers). Uses pattern matching ("use <tool_name> ...") to
-    detect tool requests since there's no LLM to decide.
+    Accepts tools in the same format as AzureOpenAIResponsesClient
+    (list of MCPStreamableHTTPTool or other tool providers). Uses
+    pattern matching ("use <tool_name> ...") to detect tool requests
+    since there's no LLM to decide.
     """
 
-    id: str = field(
-        default_factory=lambda: f"mock-agent-{uuid.uuid4().hex[:8]}")
-    name: str | None = "MockAgent"
-    description: str | None = "A mock agent for development"
-    response_prefix: str = field(default="[Mock] ")
-    tools: list[Any] = field(default_factory=list)
+    OTEL_PROVIDER_NAME: ClassVar[str] = "mock"
+    MOCK_PREFIX: ClassVar[str] = "[Mock] "
 
-    def get_new_thread(self, **kwargs: Any) -> AgentThread:
-        """Create a new conversation thread."""
-        return AgentThread()
+    def __init__(self, *, tools: list[Any] | None = None, **kwargs: Any) -> None:
+        """Initialize the mock chat client.
+
+        Args:
+            tools: Optional list of tool providers (MCPStreamableHTTPTool etc.)
+            **kwargs: Additional arguments passed to BaseChatClient.
+        """
+        super().__init__(**kwargs)
+        self.tools: list[Any] = tools or []
 
     def _get_available_tools(self) -> list[tuple[str, Any]]:
         """Get list of (tool_name, tool_provider) from tools.
@@ -95,20 +103,14 @@ class MockAgent(BaseAgent):
         return {}
 
     def _extract_last_user_message(
-        self, messages: str | ChatMessage | Sequence[str | ChatMessage] | None
+        self, messages: MutableSequence[ChatMessage]
     ) -> str:
         """Extract the last user message from input."""
-        if messages is None:
+        if not messages:
             return ""
-        if isinstance(messages, str):
-            return messages
-        if isinstance(messages, ChatMessage):
-            return (messages.text or "") if messages.role == Role.USER else ""
 
         # Sequence of messages - find the last user message
         for msg in reversed(list(messages)):
-            if isinstance(msg, str):
-                return msg
             if isinstance(msg, ChatMessage) and msg.role == Role.USER:
                 return msg.text or ""
         return ""
@@ -121,18 +123,18 @@ class MockAgent(BaseAgent):
 
         Returns:
             Tuple of (tool_name, tool_provider, remaining_message) where
-            tool_name is None if no tool was requested
+            tool_name is None if no tool was requested.
         """
         available_tools = self._get_available_tools()
         if not available_tools:
             return None, None, message
 
-        for tool_name, tool_provider in available_tools:
-            # Pattern: "use <tool_name>" followed by content
-            pattern = rf"\buse\s+{re.escape(tool_name)}\s*(.*)"
-            match = re.search(pattern, message, re.IGNORECASE)
-            if match:
-                return tool_name, tool_provider, match.group(1).strip()
+        tool_names = [name for name, _ in available_tools]
+        tool_map = {name: provider for name, provider in available_tools}
+
+        matched_tool, remaining = detect_tool_request(message, tool_names)
+        if matched_tool:
+            return matched_tool, tool_map[matched_tool], remaining
 
         return None, None, message
 
@@ -145,7 +147,7 @@ class MockAgent(BaseAgent):
         Returns:
             List of parsed integers.
         """
-        return [int(n) for n in re.findall(r"-?\d+", args)]
+        return parse_integers(args)
 
     def _build_tool_args(
         self, tool_name: str, tool_provider: Any, args: str
@@ -200,30 +202,58 @@ class MockAgent(BaseAgent):
         self, tool_name: str, tool_provider: Any, args_dict: dict[str, Any]
     ) -> str:
         """Execute a tool with pre-built arguments."""
-        try:
-            if hasattr(tool_provider, "call_tool"):
-                result = await tool_provider.call_tool(tool_name, **args_dict)
-                # Handle Content objects
-                if isinstance(result, list):
-                    texts = []
-                    for c in result:
-                        if hasattr(c, "text") and c.text:
-                            texts.append(c.text)
-                        else:
-                            texts.append(str(c))
-                    return " ".join(texts)
-                return str(result)
-            return f"Mock tool {tool_name} called with: {args_dict}"
-        except Exception as e:
-            logger.exception("Tool execution failed: %s", tool_name)
-            return f"Tool error: {e}"
+        with tracer.start_as_current_span(
+            "mock_chat.execute_tool",
+            attributes={
+                "tool.name": tool_name,
+                "tool.args_count": len(args_dict),
+            },
+        ) as span:
+            try:
+                if hasattr(tool_provider, "call_tool"):
+                    logger.info(
+                        "Executing tool: %s with args: %s",
+                        tool_name,
+                        str(args_dict),
+                    )
+                    result = await tool_provider.call_tool(tool_name, **args_dict)
+                    # Handle Content objects
+                    if isinstance(result, list):
+                        texts = []
+                        for c in result:
+                            if hasattr(c, "text") and c.text:
+                                texts.append(c.text)
+                            else:
+                                texts.append(str(c))
+                        result_str = " ".join(texts)
+                    else:
+                        result_str = str(result)
+                    span.set_attribute("tool.success", True)
+                    logger.info(
+                        "Tool returned: %s result=%s",
+                        tool_name,
+                        result_str,
+                    )
+                    return result_str
+                result_str = f"Mock tool {tool_name} called with: {args_dict}"
+                span.set_attribute("tool.success", True)
+                span.set_attribute("tool.mock", True)
+                return result_str
+            except Exception as e:
+                span.set_attribute("tool.success", False)
+                span.set_attribute("error", str(e))
+                span.record_exception(e)
+                logger.error("Tool execution failed: %s error=%s",
+                             tool_name, str(e))
+                return f"Tool error: {e}"
 
-    async def run_stream(
+    async def _inner_get_streaming_response(
         self,
-        messages: str | ChatMessage | Sequence[str |
-                                               ChatMessage] | None = None,
+        *,
+        messages: MutableSequence[ChatMessage],
+        options: dict[str, Any],
         **kwargs: Any,
-    ) -> AsyncIterable[AgentResponseUpdate]:
+    ) -> AsyncIterable[ChatResponseUpdate]:
         """Yield streaming response updates with proper tool call events."""
         last_message = self._extract_last_user_message(messages)
 
@@ -237,8 +267,8 @@ class MockAgent(BaseAgent):
 
             if args_dict is None:
                 # Invalid args - yield error message
-                yield AgentResponseUpdate(
-                    text=f"{self.response_prefix}Error: {tool_name} requires valid arguments",
+                yield ChatResponseUpdate(
+                    text=f"{self.MOCK_PREFIX}Error: {tool_name} requires valid arguments",
                     role=Role.ASSISTANT,
                 )
                 return
@@ -246,10 +276,8 @@ class MockAgent(BaseAgent):
             # Generate unique call ID
             call_id = f"call_{uuid.uuid4().hex[:12]}"
 
-            # 1. Emit tool call - NO text in this update to avoid orphaned messages
-            # The framework creates a "tool-only" message that never gets closed,
-            # causing AG-UI client validation errors. This is a framework bug.
-            yield AgentResponseUpdate(
+            # 1. Emit tool call
+            yield ChatResponseUpdate(
                 role=Role.ASSISTANT,
                 contents=[
                     Content.from_function_call(
@@ -266,7 +294,7 @@ class MockAgent(BaseAgent):
             )
 
             # 3. Emit tool result
-            yield AgentResponseUpdate(
+            yield ChatResponseUpdate(
                 role=Role.TOOL,
                 contents=[
                     Content.from_function_result(
@@ -275,28 +303,38 @@ class MockAgent(BaseAgent):
                     )
                 ],
             )
-            # Note: We skip the final text response due to a framework bug.
-            # The tool-only message created by the framework never gets
-            # TEXT_MESSAGE_END, causing "@ag-ui/client" validation to fail
-            # with "text messages are still active" error.
         else:
-            # No tool - echo message
-            content = f"{self.response_prefix}Echo: {last_message or 'No message'}"
-            yield AgentResponseUpdate(text=content, role=Role.ASSISTANT)
+            # No tool - echo message with prefix
+            content = f"{self.MOCK_PREFIX}Echo: {last_message or 'No message'}"
+            yield ChatResponseUpdate(text=content, role=Role.ASSISTANT)
 
-    async def run(
+    async def _inner_get_response(
         self,
-        messages: str | ChatMessage | Sequence[str |
-                                               ChatMessage] | None = None,
+        *,
+        messages: MutableSequence[ChatMessage],
+        options: dict[str, Any],
         **kwargs: Any,
-    ) -> AgentResponse:
-        """Return a mock response by aggregating run_stream() output."""
-        all_text = []
-        async for update in self.run_stream(messages, **kwargs):
+    ) -> ChatResponse:
+        """Return a mock response by aggregating streaming output."""
+        all_text: list[str] = []
+        all_contents: list[Content] = []
+
+        async for update in self._inner_get_streaming_response(
+            messages=messages, options=options, **kwargs
+        ):
             if update.text:
                 all_text.append(update.text)
+            if update.contents:
+                all_contents.extend(update.contents)
 
-        content = "".join(all_text) or "[Mock] No response"
-        return AgentResponse(
-            messages=ChatMessage(role=Role.ASSISTANT, text=content),
+        response_text = "".join(all_text) or f"{self.MOCK_PREFIX}No response"
+
+        return ChatResponse(
+            messages=[
+                ChatMessage(
+                    role=Role.ASSISTANT,
+                    text=response_text,
+                    contents=all_contents if all_contents else None,
+                )
+            ],
         )

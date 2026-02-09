@@ -1,6 +1,7 @@
 import { Route, Switch, Link } from 'wouter'
 import { Home } from './pages/Home'
 import { Chat } from './pages/Chat'
+import { McpChat } from './pages/McpChat'
 import { Report } from './pages/Report'
 
 export function App() {
@@ -10,6 +11,7 @@ export function App() {
         <div class="container mx-auto px-4 py-3 flex gap-4">
           <Link href="/" class="text-blue-600 hover:text-blue-800">Home</Link>
           <Link href="/chat" class="text-blue-600 hover:text-blue-800">Chat</Link>
+          <Link href="/mcp-chat" class="text-blue-600 hover:text-blue-800">MCP Chat</Link>
           <Link href="/report" class="text-blue-600 hover:text-blue-800">Report</Link>
         </div>
       </nav>
@@ -17,6 +19,7 @@ export function App() {
         <Switch>
           <Route path="/" component={Home} />
           <Route path="/chat" component={Chat} />
+          <Route path="/mcp-chat" component={McpChat} />
           <Route path="/report" component={Report} />
           <Route>404: Not Found</Route>
         </Switch>

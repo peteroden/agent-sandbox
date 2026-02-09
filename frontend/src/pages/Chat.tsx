@@ -1,13 +1,13 @@
 import { useEffect } from 'preact/hooks'
 import { ChatProvider, ChatHeader, MessageList, MessageInput } from 'react-ag-ui'
 import { useChat } from '../hooks/useChat'
-import { logger } from '../services/telemetry'
+import { logger } from '@agent-sandbox/otel-web-sdk'
 import 'react-ag-ui/dist/styles.css'
 
-const AGENT_URL = import.meta.env.VITE_AGENT_URL ?? '/api'
+const AGENT_URL = import.meta.env.VITE_AGENT_URL ?? '/ag-ui'
 
 export function Chat() {
-  const { agent } = useChat({ url: AGENT_URL, enableTelemetry: true })
+  const { agent } = useChat({ url: AGENT_URL })
 
   useEffect(() => {
     logger.info('Chat page loaded', { 'agent.url': AGENT_URL })

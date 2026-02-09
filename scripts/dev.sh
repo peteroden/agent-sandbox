@@ -166,8 +166,16 @@ main() {
   if [[ "${RUN_SIGNOZ}" == "true" ]]; then
     start_signoz
     export VITE_OTEL_EXPORTER="otlp"
-    export VITE_OTEL_ENDPOINT="http://localhost:4318"
-    export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
+    # Use empty endpoint so browser uses relative URLs (/v1/traces) via Vite proxy
+    export VITE_OTEL_ENDPOINT=""
+    # Agent Framework HTTP exporters need full paths for each signal
+    export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+    export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="http://localhost:4318/v1/traces"
+    export OTEL_EXPORTER_OTLP_LOGS_ENDPOINT="http://localhost:4318/v1/logs"
+    export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="http://localhost:4318/v1/metrics"
+    # Enable Agent Framework instrumentation for traces
+    export ENABLE_INSTRUMENTATION=true
+    export OTEL_SERVICE_NAME="agent-sandbox-server"
   fi
 
   # Build command array for concurrently

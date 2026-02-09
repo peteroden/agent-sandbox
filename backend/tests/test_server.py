@@ -1,6 +1,9 @@
 """Tests for server module."""
 
+import logging
 import os
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,23 +16,36 @@ from tests.conftest import (
     LLM_PROVIDER_MOCK,
     TEST_AZURE_DEPLOYMENT,
     TEST_AZURE_ENDPOINT,
+    TEST_MCP_SERVER_NAME_TEXT,
+    TEST_MCP_SERVER_URL_GENERIC,
 )
+
+# Expected agent type for both providers (unified)
+EXPECTED_AGENT_TYPE = "ChatAgent"
+
+# === Local Constants ===
+YAML_SINGLE_SERVER = """
+servers:
+  - name: {name}
+    url: {url}
+    enabled: {enabled}
+"""
 
 
 class TestCreateAgentProviderSelection:
     """Tests for create_agent LLM provider selection."""
 
     @pytest.mark.parametrize(
-        ("provider", "expected_agent"),
+        "provider",
         [
-            (LLM_PROVIDER_MOCK, "MockAgent"),
-            (LLM_PROVIDER_AZURE, "ChatAgent"),
+            LLM_PROVIDER_MOCK,
+            LLM_PROVIDER_AZURE,
         ],
     )
-    def test_create_agent_selects_correct_agent_type(
-        self, provider: str, expected_agent: str
+    def test_create_agent_returns_chat_agent_for_all_providers(
+        self, provider: str
     ) -> None:
-        """create_agent returns correct agent type based on LLM_PROVIDER."""
+        """create_agent returns ChatAgent for all providers."""
         env = {ENV_LLM_PROVIDER: provider}
         if provider == LLM_PROVIDER_AZURE:
             env[ENV_AZURE_ENDPOINT] = TEST_AZURE_ENDPOINT
@@ -48,19 +64,61 @@ class TestCreateAgentProviderSelection:
                 from agent_sandbox.server import create_agent
 
                 agent = create_agent()
-                assert type(agent).__name__ == expected_agent
+                assert type(agent).__name__ == EXPECTED_AGENT_TYPE
             finally:
                 for p in patches:
                     p.stop()
 
-    def test_create_agent_defaults_to_mock(self) -> None:
-        """create_agent uses mock when LLM_PROVIDER is unset."""
+    def test_create_agent_defaults_to_mock_provider(self) -> None:
+        """create_agent uses MockChatClient when LLM_PROVIDER is unset."""
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop(ENV_LLM_PROVIDER, None)
             from agent_sandbox.server import create_agent
+            from agent_sandbox.agents.mock_chat_client import MockChatClient
 
             agent = create_agent()
-            assert type(agent).__name__ == "MockAgent"
+            assert type(agent).__name__ == EXPECTED_AGENT_TYPE
+            assert isinstance(agent.chat_client, MockChatClient)
+
+
+class TestCreateAgentUnified:
+    """Tests for unified ChatAgent creation."""
+
+    def test_mock_provider_uses_mock_chat_client(self) -> None:
+        """Mock provider creates ChatAgent with MockChatClient."""
+        with patch.dict(os.environ, {ENV_LLM_PROVIDER: LLM_PROVIDER_MOCK}):
+            from agent_sandbox.server import create_agent
+            from agent_sandbox.agents.mock_chat_client import MockChatClient
+
+            agent = create_agent()
+            assert isinstance(agent.chat_client, MockChatClient)
+
+    def test_azure_provider_uses_azure_chat_client(self) -> None:
+        """Azure provider creates ChatAgent with AzureOpenAIChatClient."""
+        env = {
+            ENV_LLM_PROVIDER: LLM_PROVIDER_AZURE,
+            ENV_AZURE_ENDPOINT: TEST_AZURE_ENDPOINT,
+            ENV_AZURE_DEPLOYMENT: TEST_AZURE_DEPLOYMENT,
+        }
+
+        with patch.dict(os.environ, env, clear=False):
+            with patch("agent_framework.azure.AzureOpenAIChatClient") as MockClient:
+                mock_client_instance = MagicMock()
+                MockClient.return_value = mock_client_instance
+
+                from agent_sandbox.server import create_agent
+
+                agent = create_agent()
+                assert agent.chat_client is mock_client_instance
+
+    def test_agent_has_as_mcp_server_method(self) -> None:
+        """ChatAgent has as_mcp_server() method."""
+        with patch.dict(os.environ, {ENV_LLM_PROVIDER: LLM_PROVIDER_MOCK}):
+            from agent_sandbox.server import create_agent
+
+            agent = create_agent()
+            assert hasattr(agent, "as_mcp_server")
+            assert callable(agent.as_mcp_server)
 
 
 class TestCreateAgentAzureValidation:
@@ -104,7 +162,8 @@ class TestCreateAgentWithTools:
 
             agent = create_agent(mcp_tools=mock_tools)  # type: ignore
 
-            assert agent.tools == mock_tools
+            # ChatAgent stores tools in default_options
+            assert agent.default_options["tools"] == mock_tools
 
     def test_create_agent_works_without_tools(self) -> None:
         """Agent works with no tools."""
@@ -113,7 +172,8 @@ class TestCreateAgentWithTools:
 
             agent = create_agent(mcp_tools=None)
 
-            assert agent.tools == []
+            # ChatAgent stores tools in default_options (empty list when None)
+            assert agent.default_options["tools"] == []
 
 
 class TestCreateChatAgentHelper:
@@ -199,13 +259,13 @@ class TestAgentInstructions:
 class TestCreateMCPTools:
     """Tests for create_mcp_tools graceful degradation."""
 
-    async def test_create_mcp_tools_handles_connection_failures(self) -> None:
+    async def test_create_mcp_tools_handles_connection_failures(
+        self, clear_server_module_cache: None
+    ) -> None:
         """create_mcp_tools continues when one server fails after retries."""
-        server_urls_seen: list[str] = []
-
         def mock_factory(url: str = "", **_: object) -> MagicMock:
-            server_urls_seen.append(url)
             tool = MagicMock()
+            tool.functions = []
             # First server always fails, second always succeeds
             if "8001" in url:
                 tool.connect = AsyncMock(side_effect=ConnectionError())
@@ -213,24 +273,92 @@ class TestCreateMCPTools:
                 tool.connect = AsyncMock()
             return tool
 
-        with patch("agent_sandbox.server.TracingMCPTool", side_effect=mock_factory):
-            with patch("agent_sandbox.server.asyncio.sleep", new_callable=AsyncMock):
+        with patch("agent_sandbox.registry.mcp_registry.TracingTool", side_effect=mock_factory):
+            with patch("agent_sandbox.registry.mcp_registry.asyncio.sleep", new_callable=AsyncMock):
                 from agent_sandbox.server import create_mcp_tools
 
                 tools = await create_mcp_tools()
 
         assert len(tools) == 1  # Only one server connected
 
-    async def test_create_mcp_tools_returns_empty_when_all_fail(self) -> None:
+    async def test_create_mcp_tools_returns_empty_when_all_fail(
+        self, clear_server_module_cache: None
+    ) -> None:
         """create_mcp_tools returns empty list when all servers fail."""
-        with patch("agent_sandbox.server.TracingMCPTool") as MockTool:
+        with patch("agent_sandbox.registry.mcp_registry.TracingTool") as MockTool:
             mock = MagicMock()
             mock.connect = AsyncMock(side_effect=ConnectionError())
             MockTool.return_value = mock
 
-            with patch("agent_sandbox.server.asyncio.sleep", new_callable=AsyncMock):
+            with patch("agent_sandbox.registry.mcp_registry.asyncio.sleep", new_callable=AsyncMock):
                 from agent_sandbox.server import create_mcp_tools
 
                 tools = await create_mcp_tools()
 
             assert tools == []
+
+
+class TestMCPRegistryIntegration:
+    """Tests for MCP registry integration in server."""
+
+    def test_get_default_config_path_returns_mcp_servers_yaml(
+        self, clear_server_module_cache: None
+    ) -> None:
+        """get_default_config_path returns path to mcp-servers.yaml."""
+        from agent_sandbox.server import get_default_config_path
+
+        config_path = get_default_config_path()
+
+        assert config_path.name == "mcp-servers.yaml"
+        assert config_path.exists()
+
+    async def test_create_mcp_tools_uses_registry(
+        self, tmp_path: Path, clear_server_module_cache: None
+    ) -> None:
+        """create_mcp_tools uses MCPServerRegistry to load config."""
+        config_file = tmp_path / "test-mcp.yaml"
+        config_content = YAML_SINGLE_SERVER.format(
+            name=TEST_MCP_SERVER_NAME_TEXT,
+            url=TEST_MCP_SERVER_URL_GENERIC,
+            enabled="true",
+        )
+        config_file.write_text(config_content)
+        mock_tool = MagicMock()
+        mock_tool.connect = AsyncMock()
+        mock_tool.functions = []
+
+        with patch.dict(os.environ, {"MCP_CONFIG_PATH": str(config_file)}):
+            with patch("agent_sandbox.registry.mcp_registry.TracingTool", return_value=mock_tool):
+                from agent_sandbox.server import create_mcp_tools
+
+                tools = await create_mcp_tools()
+
+                # Should have loaded from our test config
+                assert len(tools) == 1
+
+    async def test_create_mcp_tools_logs_config_at_startup(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, clear_server_module_cache: None
+    ) -> None:
+        """create_mcp_tools logs loaded configuration."""
+        logged_server_name = "logged-server"
+        config_file = tmp_path / "test-mcp.yaml"
+        config_content = YAML_SINGLE_SERVER.format(
+            name=logged_server_name,
+            url=TEST_MCP_SERVER_URL_GENERIC,
+            enabled="true",
+        )
+        config_file.write_text(config_content)
+        mock_tool = MagicMock()
+        mock_tool.connect = AsyncMock()
+        mock_tool.functions = []
+
+        with caplog.at_level(logging.INFO):
+            with patch.dict(os.environ, {"MCP_CONFIG_PATH": str(config_file)}):
+                with patch("agent_sandbox.registry.mcp_registry.TracingTool", return_value=mock_tool):
+                    from agent_sandbox.server import create_mcp_tools
+
+                    await create_mcp_tools()
+
+        # Should log server connection
+        assert any(
+            logged_server_name in record.message for record in caplog.records)

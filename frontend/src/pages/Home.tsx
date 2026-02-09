@@ -1,5 +1,5 @@
 import { useEffect } from 'preact/hooks'
-import { logger } from '../services/telemetry'
+import { logger } from '@agent-sandbox/otel-web-sdk'
 
 export function Home() {
   useEffect(() => {

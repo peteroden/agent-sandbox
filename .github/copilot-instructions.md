@@ -32,6 +32,18 @@ Apply SOLID principles throughout:
 - Interface Segregation: Focused, minimal interfaces
 - Dependency Inversion: Depend on abstractions, use injection
 
+## Code Review is Mandatory
+
+No coding work is considered complete until:
+
+1. Implementation is finished
+2. Tests pass
+3. **Self-review using [code-review.instructions.md](instructions/code-review.instructions.md) checklist**
+4. All 🔴 CRITICAL and 🟡 IMPORTANT issues resolved
+5. 🟢 SUGGESTION items applied or acknowledged
+
+This applies to all code changes, whether implementing new features, fixing bugs, or refactoring.
+
 ## Project Structure
 
 ```
@@ -97,6 +109,7 @@ Auto-applied instructions in `.github/instructions/`:
 | File                             | Applies To                                            | Purpose                         |
 | -------------------------------- | ----------------------------------------------------- | ------------------------------- |
 | `bash.instructions.md`           | `**/*.sh`                                             | Bash scripting conventions      |
+| `code-review.instructions.md`    | `**`                                                  | Mandatory code review checklist |
 | `commit-message.instructions.md` | Commits                                               | Conventional commit format      |
 | `git-merge.instructions.md`      | Git operations                                        | Merge/rebase protocols          |
 | `markdown.instructions.md`       | `**/*.md`                                             | Markdown formatting             |
