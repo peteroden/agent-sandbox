@@ -82,3 +82,13 @@ This displays a status table showing which services are healthy.
 ## Observability
 
 For distributed tracing with SigNoz, see [signoz-setup.md](../docs/signoz-setup.md).
+
+## E2E Tests
+
+Playwright E2E tests use `dev.sh --mock` as their `webServer` to start the full stack automatically. Run them from the `e2e/` directory:
+
+```bash
+cd e2e && pnpm test
+```
+
+See the [E2E README](../e2e/README.md) for test details and configuration.
