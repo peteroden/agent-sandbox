@@ -85,10 +85,8 @@ test.describe('Trace propagation — consistent traceId', () => {
     await input.fill(ADD_COMMAND)
     await page.getByRole('button', { name: 'Send' }).click()
 
-    // Use nth(1) since the first Tool Call: echo_text is already on the page
-    await expect(page.getByText('Tool Call: add_numbers')).toBeVisible({
-      timeout: RESPONSE_TIMEOUT,
-    })
+    // Wait for the SSE stream to deliver the add result
+    // (avoid depending on react-ag-ui rendering for the second tool call)
     await expect
       .poll(() => sseCapture.getToolCallResults(), { timeout: RESPONSE_TIMEOUT })
       .toContainEqual(ADD_EXPECTED)

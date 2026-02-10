@@ -5,7 +5,11 @@ Pure function tests for shared mock utilities.
 
 import pytest
 
-from agent_sandbox.agents.mock_utils import detect_tool_request, parse_integers
+from agent_sandbox.agents.mock_utils import (
+    _normalize_result,
+    detect_tool_request,
+    parse_integers,
+)
 
 # === Local Test Constants ===
 TEST_TOOL_NAME_ADD = "add_numbers"
@@ -103,3 +107,36 @@ class TestDetectToolRequest:
             f"use {TEST_TOOL_NAME_ADD} 5", [])
         assert tool_name is None
         assert remaining == f"use {TEST_TOOL_NAME_ADD} 5"
+
+
+class TestNormalizeResult:
+    """Tests for _normalize_result function."""
+
+    def test_plain_string(self) -> None:
+        assert _normalize_result("hello") == "hello"
+
+    def test_mcp_dict_list(self) -> None:
+        """MCP-style [{"type":"text","text":"8"}] returns '8'."""
+        assert _normalize_result([{"type": "text", "text": "8"}]) == "8"
+
+    def test_content_object_list(self) -> None:
+        """Framework Content objects with .text attribute are extracted."""
+        from agent_framework import Content
+
+        # Content.from_function_result stores the result, but the framework
+        # wraps tool outputs in Content objects with a .text attribute
+        obj = Content.from_text(text="Echo: hi")
+        assert _normalize_result([obj]) == "Echo: hi"
+
+    def test_single_content_object(self) -> None:
+        """Single Content object (not in list) is extracted."""
+        from agent_framework import Content
+
+        obj = Content.from_text(text="42")
+        assert _normalize_result(obj) == "42"
+
+    def test_string_list(self) -> None:
+        assert _normalize_result(["hello", "world"]) == "hello world"
+
+    def test_integer_fallback(self) -> None:
+        assert _normalize_result(42) == "42"

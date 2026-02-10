@@ -48,10 +48,36 @@ export class AgUiResponseCapture {
     return this.getAllEvents().filter((e) => e.type === type)
   }
 
-  /** Get the content/text from TOOL_CALL_RESULT events. */
+  /** Get the content/text from TOOL_CALL_RESULT events.
+   *
+   * Handles both plain-text results ("Echo: hello world") and
+   * MCP-style JSON results ([{"type":"text","text":"Echo: hello world"}]).
+   */
   getToolCallResults(): string[] {
     return this.findEventsByType('TOOL_CALL_RESULT')
-      .map((e) => (e.content as string) ?? '')
+      .map((e) => {
+        const raw = (e.content as string) ?? ''
+        if (!raw) return ''
+        // Try to parse MCP-style JSON array
+        try {
+          const parsed: unknown = JSON.parse(raw)
+          if (Array.isArray(parsed)) {
+            const texts = parsed
+              .filter(
+                (item): item is { text: string } =>
+                  typeof item === 'object' &&
+                  item !== null &&
+                  'text' in item &&
+                  typeof (item as { text: unknown }).text === 'string',
+              )
+              .map((item) => item.text)
+            if (texts.length > 0) return texts.join(' ')
+          }
+        } catch {
+          // Not JSON — use as-is
+        }
+        return raw
+      })
       .filter(Boolean)
   }
 
