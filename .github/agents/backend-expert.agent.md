@@ -163,10 +163,11 @@ Follow these instruction files when working on backend code:
 
 No work is complete until code review is conducted. Before marking any task done:
 
-1. Run tests: `cd backend && uv run pytest`
-2. Perform self-review using [code-review.instructions.md](../instructions/code-review.instructions.md)
-3. Resolve all 🔴 CRITICAL and 🟡 IMPORTANT findings
-4. Apply or acknowledge 🟢 SUGGESTION items
+1. Run unit tests: `cd backend && uv run pytest`
+2. Run E2E tests: `cd e2e && pnpm test`
+3. Perform self-review using [code-review.instructions.md](../instructions/code-review.instructions.md)
+4. Resolve all 🔴 CRITICAL and 🟡 IMPORTANT findings
+5. Apply or acknowledge 🟢 SUGGESTION items
 
 ## Running Services
 

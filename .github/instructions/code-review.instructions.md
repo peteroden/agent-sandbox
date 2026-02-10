@@ -19,10 +19,11 @@ All code changes require a code review before work is considered complete. This 
 When working on any task:
 
 1. Complete the implementation
-2. Run tests to verify functionality
-3. **Perform self-review using this checklist**
-4. Address all findings
-5. Only then mark work as complete
+2. Run unit tests to verify functionality
+3. Run E2E tests to verify no regressions (`cd e2e && pnpm test`)
+4. **Perform self-review using this checklist**
+5. Address all findings
+6. Only then mark work as complete
 
 ## Review Priorities
 
@@ -78,6 +79,7 @@ See [security.instructions.md](security.instructions.md) for comprehensive OWASP
 - [ ] Parameterized tests used where applicable
 - [ ] Tests cover edge cases and error scenarios
 - [ ] Tests are independent and deterministic
+- [ ] E2E tests pass (`cd e2e && pnpm test`)
 
 ### Performance
 

@@ -303,6 +303,11 @@ class MockChatClient(BaseChatClient):
                     )
                 ],
             )
+
+            # 4. Emit final assistant message with the tool result text
+            # This is needed for the non-streaming path (_inner_get_response)
+            # which aggregates .text fields to build the response.
+            yield ChatResponseUpdate(text=result, role=Role.ASSISTANT)
         else:
             # No tool - echo message with prefix
             content = f"{self.MOCK_PREFIX}Echo: {last_message or 'No message'}"

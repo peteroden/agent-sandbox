@@ -167,6 +167,9 @@ Keep iterating until explicit approval or handoff.
 **Verification**
 {How to test: commands, tests, manual checks}
 
+- Unit tests: `cd frontend && pnpm test --run` and `cd backend && uv run pytest`
+- E2E tests: `cd e2e && pnpm test`
+
 **Code Review**
 {Mandatory self-review using code-review.instructions.md checklist before marking complete}
 
