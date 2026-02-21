@@ -1,7 +1,7 @@
 """MCP Server Registry for managing multiple MCP server connections.
 
 This module provides a registry that loads MCP server configuration
-from YAML files and creates TracingTool instances for each enabled server.
+from YAML files and creates MCPStreamableHTTPTool instances for each enabled server.
 """
 
 import asyncio
@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from mcp_trace_context import TracingTool
+from agent_framework import MCPStreamableHTTPTool
 from opentelemetry import trace
 
 from agent_sandbox.config.loader import load_mcp_config
@@ -23,7 +23,7 @@ tracer = trace.get_tracer("agent_sandbox.registry")
 class MCPServerRegistry:
     """Registry for managing MCP server configurations and connections.
 
-    Supports loading configuration from YAML files, creating TracingTool
+    Supports loading configuration from YAML files, creating MCPStreamableHTTPTool
     instances for enabled servers, and performing health checks.
     """
 
@@ -77,8 +77,8 @@ class MCPServerRegistry:
         self,
         max_retries: int = 3,
         retry_delay: float = 1.0,
-    ) -> list[TracingTool]:
-        """Create and connect TracingTool instances for enabled servers.
+    ) -> list[MCPStreamableHTTPTool]:
+        """Create and connect MCPStreamableHTTPTool instances for enabled servers.
 
         Handles individual server failures gracefully - if a server is unavailable,
         it logs a warning and continues with the remaining servers.
@@ -88,9 +88,9 @@ class MCPServerRegistry:
             retry_delay: Delay between retry attempts in seconds
 
         Returns:
-            List of connected TracingTool instances
+            List of connected MCPStreamableHTTPTool instances
         """
-        tools: list[TracingTool] = []
+        tools: list[MCPStreamableHTTPTool] = []
         enabled_servers = self.get_enabled_servers()
 
         with tracer.start_as_current_span(
@@ -107,7 +107,7 @@ class MCPServerRegistry:
                 ) as server_span:
                     for attempt in range(max_retries):
                         try:
-                            tool = TracingTool(
+                            tool = MCPStreamableHTTPTool(
                                 name=f"{server.name}-tools",
                                 url=server.url,
                                 description=f"Tools provided by the {server.name} MCP server",

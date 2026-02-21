@@ -7,14 +7,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from agent_framework import ChatAgent
+from agent_framework import Agent, MCPStreamableHTTPTool
 from agent_framework.observability import configure_otel_providers, get_tracer
 from agent_framework_ag_ui import add_agent_framework_fastapi_endpoint
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mcp.server.fastmcp.server import StreamableHTTPASGIApp
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-from mcp_trace_context import TracingTool
 from opentelemetry.instrumentation.starlette import StarletteInstrumentor
 from starlette.applications import Starlette
 from starlette.routing import Route
@@ -95,20 +94,20 @@ COMMON MISTAKES TO AVOID:
 def _create_chat_agent(
     chat_client: Any,
     tools: list[Any] | None,
-) -> ChatAgent:
-    """Create ChatAgent with standard configuration.
+) -> Agent:
+    """Create Agent with standard configuration.
 
     Args:
         chat_client: The chat client (Azure OpenAI, etc.)
         tools: Optional list of MCP tools
 
     Returns:
-        Configured ChatAgent instance
+        Configured Agent instance
     """
-    return ChatAgent(
+    return Agent(
+        client=chat_client,
         name=AGENT_NAME,
         instructions=AGENT_INSTRUCTIONS,
-        chat_client=chat_client,
         tools=tools or None,
         default_options={
             "temperature": 0.0,
@@ -126,22 +125,22 @@ def get_default_config_path() -> Path:
     return Path(__file__).parent.parent.parent / "mcp-servers.yaml"
 
 
-async def create_mcp_tools(config_path: Path | None = None) -> list[TracingTool]:
+async def create_mcp_tools(config_path: Path | None = None) -> list[MCPStreamableHTTPTool]:
     """Create and connect to all configured MCP servers.
 
     Loads server configuration from YAML file using MCPServerRegistry.
     Handles individual server failures gracefully - if a server is unavailable,
     it logs a warning and continues with the remaining servers.
 
-    Uses TracingTool which injects trace context via _meta field for
-    proper distributed tracing across MCP boundaries.
+    Trace context propagation is handled automatically by the agent-framework
+    and FastMCP v3 built-in support.
 
     Args:
         config_path: Optional path to config file. If None, uses MCP_CONFIG_PATH
                      env var or defaults to mcp-servers.yaml in backend directory.
 
     Returns:
-        List of connected TracingTool instances
+        List of connected MCPStreamableHTTPTool instances
     """
     with tracer.start_as_current_span("server.create_mcp_tools") as span:
         # Determine config path
@@ -166,15 +165,15 @@ async def create_mcp_tools(config_path: Path | None = None) -> list[TracingTool]
 
 
 def create_agent(
-    mcp_tools: list[TracingTool] | None = None,
-) -> ChatAgent:
+    mcp_tools: list[MCPStreamableHTTPTool] | None = None,
+) -> Agent:
     """Create the agent with appropriate chat client based on LLM_PROVIDER.
 
     Uses LLM_PROVIDER env var to select:
-    - 'mock' (default): ChatAgent with MockChatClient for testing
-    - 'azure': ChatAgent with AzureOpenAIChatClient
+    - 'mock' (default): Agent with MockChatClient for testing
+    - 'azure': Agent with AzureOpenAIChatClient
 
-    Both providers return ChatAgent, enabling unified as_mcp_server() support.
+    Both providers return Agent, enabling unified as_mcp_server() support.
     """
     with tracer.start_as_current_span("server.create_agent") as span:
         provider = os.environ.get("LLM_PROVIDER", "mock").lower()

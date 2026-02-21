@@ -2,10 +2,8 @@
 
 import logging
 import os
-from typing import Any
 
 from agent_framework.observability import configure_otel_providers, get_tracer
-from mcp_trace_context import propagate
 
 # Configure OpenTelemetry BEFORE FastMCP creates its internal Starlette app
 configure_otel_providers()
@@ -35,8 +33,7 @@ async def health_check(request: Request) -> Response:
 
 
 @mcp.tool()
-@propagate
-def echo_text(message: str, _meta: dict[str, Any] | None = None) -> str:
+def echo_text(message: str) -> str:
     """TEXT TOOL: Echoes a text message back to the user.
 
     DO NOT USE for math operations. Use ONLY for echoing/repeating/saying text.
@@ -51,7 +48,6 @@ def echo_text(message: str, _meta: dict[str, Any] | None = None) -> str:
 
     Args:
         message: The text message to echo back.
-        _meta: Optional MCP metadata containing trace context (internal use).
 
     Returns:
         The message prefixed with 'Echo: '.

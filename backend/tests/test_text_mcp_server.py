@@ -32,5 +32,5 @@ class TestEchoTextTool:
     )
     def test_echo_text(self, message: str, expected: str) -> None:
         """echo_text should return message with 'Echo: ' prefix."""
-        result = echo_text.fn(message)
+        result = echo_text(message)
         assert result == expected

@@ -107,7 +107,7 @@ def build_tool_args(
 # ---------------------------------------------------------------------------
 
 def extract_tool_text(tool_message: Any) -> str:
-    """Extract plain text from a tool-result ``ChatMessage``.
+    """Extract plain text from a tool-result ``Message``.
 
     Handles both string results and MCP-style list results like
     ``[{"type": "text", "text": "8"}]``.

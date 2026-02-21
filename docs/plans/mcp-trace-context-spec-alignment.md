@@ -1,8 +1,10 @@
 # Plan: Align mcp-trace-context with SEP-414, SEP-2028, and agent-framework PR #3780
 
-> **Status**: Draft
+> **Status**: Obsolete — Superseded by `remove-mcp-trace-context.md`
 > **Created**: 2026-02-10
 > **Context**: This plan can be implemented in a clean context with no prior conversation needed.
+>
+> **Note**: The `mcp-trace-context` package has been removed. Built-in tracing support in `agent-framework>=1.0.0rc1` and `fastmcp>=3.0.1` replaces all functionality described here.
 
 ## Background
 

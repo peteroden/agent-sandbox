@@ -4,12 +4,11 @@ version = "0.1.0"
 description = "AG-UI chat agent backend for Agent Sandbox"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "agent-framework>=1.0.0b260128",
-    "agent-framework-ag-ui>=1.0.0b260128",
-    "mcp-trace-context",
+    "agent-framework>=1.0.0rc1",
+    "agent-framework-ag-ui>=1.0.0b260219",
     "azure-identity",
     "fastapi",
-    "fastmcp>=2.2",
+    "fastmcp>=3.0.1",
     "httpx",
     "opentelemetry-api",
     "opentelemetry-sdk",
@@ -19,9 +18,6 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.1",
     "pyyaml>=6.0.3",
 ]
-
-[tool.uv.sources]
-mcp-trace-context = { path = "packages/mcp-trace-context", editable = true }
 
 [project.optional-dependencies]
 dev = [
