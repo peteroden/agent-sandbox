@@ -31,7 +31,7 @@ class TestAddNumbersTool:
     )
     def test_add_numbers(self, a: int, b: int, expected: int) -> None:
         """add_numbers should return the sum of two integers."""
-        result = add_numbers.fn(a, b)
+        result = add_numbers(a, b)
         assert result == expected
 
 
@@ -51,5 +51,5 @@ class TestSubtractNumbersTool:
     )
     def test_subtract_numbers(self, a: int, b: int, expected: int) -> None:
         """subtract_numbers should return the difference of two integers."""
-        result = subtract_numbers.fn(a, b)
+        result = subtract_numbers(a, b)
         assert result == expected

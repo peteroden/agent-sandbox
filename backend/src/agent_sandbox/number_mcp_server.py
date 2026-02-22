@@ -2,10 +2,8 @@
 
 import logging
 import os
-from typing import Any
 
 from agent_framework.observability import configure_otel_providers, get_tracer
-from mcp_trace_context import propagate
 from opentelemetry import trace
 
 # Configure OpenTelemetry BEFORE FastMCP creates its internal Starlette app
@@ -36,8 +34,7 @@ async def health_check(request: Request) -> Response:
 
 
 @mcp.tool()
-@propagate
-def add_numbers(a: int, b: int, _meta: dict[str, Any] | None = None) -> int:
+def add_numbers(a: int, b: int) -> int:
     """MATH TOOL: Adds two integers and returns their sum.
 
     DO NOT USE for text operations. Use ONLY for addition/sum/plus/total.
@@ -52,7 +49,6 @@ def add_numbers(a: int, b: int, _meta: dict[str, Any] | None = None) -> int:
     Args:
         a: First integer to add.
         b: Second integer to add.
-        _meta: Optional MCP metadata containing trace context (internal use).
 
     Returns:
         The sum of a and b.
@@ -67,8 +63,7 @@ def add_numbers(a: int, b: int, _meta: dict[str, Any] | None = None) -> int:
 
 
 @mcp.tool()
-@propagate
-def subtract_numbers(a: int, b: int, _meta: dict[str, Any] | None = None) -> int:
+def subtract_numbers(a: int, b: int) -> int:
     """MATH TOOL: Subtracts second integer from first and returns the difference.
 
     DO NOT USE for text operations. Use ONLY for subtraction/minus/difference.
@@ -84,7 +79,6 @@ def subtract_numbers(a: int, b: int, _meta: dict[str, Any] | None = None) -> int
     Args:
         a: Integer to subtract from.
         b: Integer to subtract.
-        _meta: Optional MCP metadata containing trace context (internal use).
 
     Returns:
         The difference (a - b).

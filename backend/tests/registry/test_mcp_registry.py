@@ -158,22 +158,22 @@ class TestMCPServerRegistryTools:
     async def test_get_all_tools_creates_tracing_tools(
         self, two_server_config: MCPRegistryConfig
     ) -> None:
-        """get_all_tools returns TracingTool instances for enabled servers."""
+        """get_all_tools returns MCPStreamableHTTPTool instances for enabled servers."""
         mock_tool = MagicMock()
         mock_tool.connect = AsyncMock()
         mock_tool.functions = ["fn1"]
 
         with patch(
-            "agent_sandbox.registry.mcp_registry.TracingTool",
+            "agent_sandbox.registry.mcp_registry.MCPStreamableHTTPTool",
             return_value=mock_tool,
-        ) as MockTracingTool:
+        ) as MockTool:
             from agent_sandbox.registry.mcp_registry import MCPServerRegistry
 
             registry = MCPServerRegistry.from_config(two_server_config)
             tools = await registry.get_all_tools()
 
-            # Should create TracingTool for each enabled server
-            assert MockTracingTool.call_count == 2
+            # Should create MCPStreamableHTTPTool for each enabled server
+            assert MockTool.call_count == 2
             assert len(tools) == 2
 
     async def test_get_all_tools_skips_disabled_servers(
@@ -185,15 +185,15 @@ class TestMCPServerRegistryTools:
         mock_tool.functions = []
 
         with patch(
-            "agent_sandbox.registry.mcp_registry.TracingTool",
+            "agent_sandbox.registry.mcp_registry.MCPStreamableHTTPTool",
             return_value=mock_tool,
-        ) as MockTracingTool:
+        ) as MockTool:
             from agent_sandbox.registry.mcp_registry import MCPServerRegistry
 
             registry = MCPServerRegistry.from_config(mixed_enabled_config)
             tools = await registry.get_all_tools()
 
-            assert MockTracingTool.call_count == 1
+            assert MockTool.call_count == 1
             assert len(tools) == 1
 
     async def test_get_all_tools_handles_connection_failure(self) -> None:
@@ -217,7 +217,7 @@ class TestMCPServerRegistryTools:
             return tool
 
         with patch(
-            "agent_sandbox.registry.mcp_registry.TracingTool",
+            "agent_sandbox.registry.mcp_registry.MCPStreamableHTTPTool",
             side_effect=mock_factory,
         ):
             with patch("agent_sandbox.registry.mcp_registry.asyncio.sleep", new_callable=AsyncMock):

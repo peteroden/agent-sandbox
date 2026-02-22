@@ -1,16 +1,16 @@
 """Tests for MockChatClient.
 
-Tests the BaseChatClient implementation with @use_function_invocation.
+Tests the BaseChatClient implementation.
 Phase 1: tool pattern -> FunctionCallContent.
-Phase 2: decorator calls back with tool results -> text output.
+Phase 2: tool results -> text output.
 """
 
-from collections.abc import MutableSequence
+from collections.abc import Sequence
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from agent_framework import ChatMessage, ChatResponse, ChatResponseUpdate, Content, Role
+from agent_framework import ChatResponse, ChatResponseUpdate, Content, Message
 
 from agent_sandbox.agents.mock_chat_client import MockChatClient
 
@@ -22,22 +22,22 @@ TOOL_ECHO = "echo_text"
 CALL_ID = "call_test123"
 
 
-def _msgs(text: str) -> MutableSequence[ChatMessage]:
-    return [ChatMessage(role=Role.USER, text=text)]
+def _msgs(text: str) -> list[Message]:
+    return [Message(role="user", text=text)]
 
 
 def _tool_result_msgs(
     user_text: str, call_id: str, tool: str,
     args: dict[str, Any], result: Any,
-) -> MutableSequence[ChatMessage]:
+) -> list[Message]:
     """Simulate framework callback: user + assistant/function_call + tool/result."""
     return [
-        ChatMessage(role=Role.USER, text=user_text),
-        ChatMessage(role=Role.ASSISTANT, contents=[
+        Message(role="user", text=user_text),
+        Message(role="assistant", contents=[
             Content.from_function_call(
                 call_id=call_id, name=tool, arguments=args),
         ]),
-        ChatMessage(role=Role.TOOL, contents=[
+        Message(role="tool", contents=[
             Content.from_function_result(call_id=call_id, result=result),
         ]),
     ]
@@ -74,25 +74,28 @@ def mock_tool_provider() -> MagicMock:
 class TestResponse:
     @pytest.mark.asyncio
     async def test_returns_chat_response(self) -> None:
-        r = await MockChatClient()._inner_get_response(messages=_msgs(TEST_MESSAGE), options=_opts())
+        r = await MockChatClient()._build_non_streaming_response(
+            messages=_msgs(TEST_MESSAGE), stream=False, options=_opts())
         assert isinstance(r, ChatResponse)
 
     @pytest.mark.asyncio
     async def test_echoes_with_prefix(self) -> None:
-        r = await MockChatClient()._inner_get_response(messages=_msgs(TEST_MESSAGE), options=_opts())
+        r = await MockChatClient()._build_non_streaming_response(
+            messages=_msgs(TEST_MESSAGE), stream=False, options=_opts())
         text = r.text or (r.messages[0].text if r.messages else "")
         assert text.startswith(MOCK_PREFIX) and TEST_MESSAGE in text
 
     @pytest.mark.asyncio
     async def test_streaming_yields_updates(self) -> None:
-        updates = [u async for u in MockChatClient()._inner_get_streaming_response(
+        updates = [u async for u in MockChatClient()._generate_updates(
             messages=_msgs(TEST_MESSAGE), options=_opts())]
         assert all(isinstance(u, ChatResponseUpdate) for u in updates)
         assert TEST_MESSAGE in "".join(u.text or "" for u in updates)
 
     @pytest.mark.asyncio
     async def test_empty_messages(self) -> None:
-        r = await MockChatClient()._inner_get_response(messages=[], options=_opts())
+        r = await MockChatClient()._build_non_streaming_response(
+            messages=[], stream=False, options=_opts())
         assert isinstance(r, ChatResponse)
 
 
@@ -110,7 +113,7 @@ class TestToolDetection:
         msg: str, tool: str | None, args: dict[str, Any] | None,
     ) -> None:
         updates = [u async for u in MockChatClient(tools=[mock_tool_provider])
-                   ._inner_get_streaming_response(messages=_msgs(msg), options=_opts())]
+                   ._generate_updates(messages=_msgs(msg), options=_opts())]
         fcs = [c for u in updates for c in u.contents if c.type == "function_call"]
         if tool is None:
             assert len(fcs) == 0
@@ -124,7 +127,7 @@ class TestToolDetection:
     async def test_no_function_result_emitted(self, mock_tool_provider: MagicMock) -> None:
         """Phase 1 emits only function_call, never function_result."""
         updates = [u async for u in MockChatClient(tools=[mock_tool_provider])
-                   ._inner_get_streaming_response(messages=_msgs(f"use {TOOL_ADD} 5 3"), options=_opts())]
+                   ._generate_updates(messages=_msgs(f"use {TOOL_ADD} 5 3"), options=_opts())]
         frs = [c for u in updates for c in u.contents if c.type == "function_result"]
         assert len(frs) == 0
 
@@ -137,7 +140,7 @@ class TestToolResultCallback:
         msgs = _tool_result_msgs(f"use {TOOL_ADD} 5 3", CALL_ID, TOOL_ADD, {
                                  "a": 5, "b": 3}, "8")
         updates = [u async for u in MockChatClient(tools=[mock_tool_provider])
-                   ._inner_get_streaming_response(messages=msgs, options=_opts())]
+                   ._generate_updates(messages=msgs, options=_opts())]
         assert "8" in "".join(u.text or "" for u in updates)
 
     @pytest.mark.asyncio
@@ -147,7 +150,7 @@ class TestToolResultCallback:
         msgs = _tool_result_msgs(f"use {TOOL_ADD} 5 3", CALL_ID, TOOL_ADD, {
                                  "a": 5, "b": 3}, mcp_result)
         updates = [u async for u in MockChatClient(tools=[mock_tool_provider])
-                   ._inner_get_streaming_response(messages=msgs, options=_opts())]
+                   ._generate_updates(messages=msgs, options=_opts())]
         text = "".join(u.text or "" for u in updates)
         assert "8" in text
         assert isinstance(text, str)
@@ -159,7 +162,7 @@ class TestToolResultCallback:
         msgs = _tool_result_msgs(f"use {TOOL_ADD} 5 3", CALL_ID, TOOL_ADD, {
                                  "a": 5, "b": 3}, content_result)
         updates = [u async for u in MockChatClient(tools=[mock_tool_provider])
-                   ._inner_get_streaming_response(messages=msgs, options=_opts())]
+                   ._generate_updates(messages=msgs, options=_opts())]
         text = "".join(u.text or "" for u in updates)
         assert text == "8"
 
@@ -168,7 +171,7 @@ class TestToolResultCallback:
         msgs = _tool_result_msgs(f"use {TOOL_ADD} 5 3", CALL_ID, TOOL_ADD, {
                                  "a": 5, "b": 3}, "8")
         updates = [u async for u in MockChatClient(tools=[mock_tool_provider])
-                   ._inner_get_streaming_response(messages=msgs, options=_opts())]
+                   ._generate_updates(messages=msgs, options=_opts())]
         fcs = [c for u in updates for c in u.contents if c.type == "function_call"]
         assert len(fcs) == 0
 

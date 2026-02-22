@@ -6,11 +6,13 @@ This guide explains how to add logging, tracing, and metrics to the Agent Sandbo
 
 The Agent Sandbox uses OpenTelemetry for distributed tracing across:
 
-- **Frontend** (`agent-sandbox-frontend`) - Browser spans via fetch instrumentation
-- **Server** (`agent-sandbox-server`) - FastAPI/Starlette HTTP spans via Agent Framework
-- **MCP Servers** (`text-mcp`, `numbers-mcp`) - Tool execution spans
+- **Frontend** (`agent-sandbox-frontend`) — Browser spans via fetch instrumentation
+- **Server** (`agent-sandbox-server`) — FastAPI/Starlette HTTP spans via Agent Framework
+- **MCP Servers** (`text-mcp`, `numbers-mcp`) — Tool execution spans
 
 Traces flow: `Frontend → Server → MCP Server → Tool`
+
+Trace context propagates automatically through MCP `_meta` using built-in support in `agent-framework>=1.0.0rc1` and `fastmcp>=3.0.1`. No custom packages are required.
 
 ## Quick Start
 
@@ -50,10 +52,8 @@ Telemetry must be configured **before** creating the FastMCP instance. This ensu
 ```python
 """my_mcp_server.py"""
 import logging
-from typing import Any
 
 from agent_framework.observability import configure_otel_providers, get_tracer
-from mcp_trace_context import propagate
 
 # Step 1: Configure telemetry FIRST (before FastMCP import)
 configure_otel_providers()
@@ -68,20 +68,18 @@ tracer = get_tracer()
 mcp = FastMCP(name="My Tools")
 ```
 
-### 2. Decorate Tools for Trace Context
+### 2. Define Tools
 
-Use `@propagate` from `mcp_trace_context` to receive trace context from the calling agent:
+Tools are plain functions decorated with `@mcp.tool()`. Trace context propagation is handled automatically by the framework through MCP `_meta`, so tools do not need any special parameters or decorators for tracing.
 
 ```python
 @mcp.tool()
-@propagate
-def my_tool(arg: str, _meta: dict[str, Any] | None = None) -> str:
+def my_tool(arg: str) -> str:
     """My tool description.
-    
+
     Args:
         arg: The input argument.
-        _meta: MCP metadata containing trace context (internal use).
-    
+
     Returns:
         The result.
     """
@@ -92,22 +90,17 @@ def my_tool(arg: str, _meta: dict[str, Any] | None = None) -> str:
         return result
 ```
 
-**Key points:**
+Use `tracer.start_as_current_span()` for custom spans within tool logic. Standard `logging` calls are automatically correlated with traces.
 
-1. `@propagate` extracts `traceparent` from `_meta` and activates it
-2. `_meta: dict[str, Any] | None = None` receives the trace context (hidden from users)
-3. `tracer.start_as_current_span()` creates a span linked to the parent trace
-4. Use standard `logging` - logs are automatically correlated with traces
+### 3. How Trace Context Propagates
 
-### 3. Why _meta Instead of HTTP Headers?
+Trace context flows through MCP calls automatically:
 
-The agent-framework spawns async tasks that break OpenTelemetry context before HTTP requests are made. HTTPX instrumentation cannot propagate trace context through MCP calls - it creates orphan traces.
-
-The solution:
-
-1. `TracingTool` captures context at `call_tool()` and injects it into `_meta`
-2. `@propagate` extracts and activates this context on the server
+1. `MCPStreamableHTTPTool` (from `agent-framework`) injects OTel context into `_meta` when calling tools
+2. `FastMCP>=3.0.1` extracts `traceparent`/`tracestate` from `_meta` and activates the context on the server
 3. Tool spans are correctly linked to the parent trace
+
+No custom decorators or `_meta` parameters are needed in tool functions.
 
 ## Instrumenting the Main Server
 
@@ -125,20 +118,22 @@ logger = logging.getLogger(__name__)
 tracer = get_tracer()
 ```
 
-### 2. Use TracingTool for MCP Connections
+### 2. Use MCPStreamableHTTPTool for MCP Connections
 
-When connecting to MCP servers, use `TracingTool` from `mcp_trace_context`:
+When connecting to MCP servers, use `MCPStreamableHTTPTool` from `agent-framework`:
 
 ```python
-from mcp_trace_context import TracingTool
+from agent_framework.mcp import MCPStreamableHTTPTool
 
-tool = TracingTool(
+tool = MCPStreamableHTTPTool(
     name="my-mcp-tools",
     url="http://localhost:8001/mcp",
     description="Tools from my MCP server",
 )
 await tool.connect()
 ```
+
+`MCPStreamableHTTPTool` automatically injects trace context into `_meta` on every `call_tool()` invocation.
 
 ### 3. Instrument Starlette for HTTP Spans
 
@@ -226,54 +221,18 @@ configure_otel_providers()
 tracer = get_tracer()
 ```
 
-### mcp-trace-context Package
+### MCPStreamableHTTPTool
 
 ```python
-from mcp_trace_context import inject, extract, propagate, TracingTool
-```
+from agent_framework.mcp import MCPStreamableHTTPTool
 
-#### `@propagate`
-
-Decorator that extracts trace context from `_meta` parameter and activates it.
-
-```python
-@propagate
-def my_tool(arg: str, _meta: dict | None = None) -> str:
-    # Trace context is now active
-    pass
-```
-
-#### `inject() -> dict`
-
-Captures current trace context for injection into `_meta`.
-
-```python
-from mcp_trace_context import inject
-
-meta = inject()
-# Returns {"traceparent": "00-...", "tracestate": "..."}
-```
-
-#### `extract(meta: dict | None) -> Context`
-
-Extracts OpenTelemetry context from `_meta` dictionary.
-
-```python
-from mcp_trace_context import extract
-
-ctx = extract(meta)
-```
-
-#### `TracingTool`
-
-MCP tool wrapper that auto-injects trace context via `_meta`.
-
-```python
-from mcp_trace_context import TracingTool
-
-tool = TracingTool(url="http://localhost:8001/mcp")
+tool = MCPStreamableHTTPTool(
+    name="my-tools",
+    url="http://localhost:8001/mcp",
+    description="Tools from my MCP server",
+)
 await tool.connect()
-# All call_tool() invocations automatically include trace context
+# All call_tool() invocations automatically include trace context in _meta
 ```
 
 ## Viewing Traces
@@ -307,9 +266,9 @@ The frontend logs trace IDs in console. Search for traces using:
 
 ### Traces Not Connecting (Backend → MCP)
 
-1. Ensure `@propagate` decorator is applied to tools
-2. Verify `_meta` parameter is in tool signature
-3. Confirm `TracingTool` is used (not `MCPStreamableHTTPTool`)
+1. Verify `MCPStreamableHTTPTool` is used for MCP connections
+2. Confirm `configure_otel_providers()` is called before tool creation
+3. Check that FastMCP version is `>=3.0.1` (includes built-in `_meta` extraction)
 
 ### Orphan Traces from MCP Servers
 
@@ -319,7 +278,7 @@ This is expected for:
 - Health checks
 - MCP initialization requests
 
-Tool execution traces should be properly linked via `_meta`.
+Tool execution traces are properly linked through `_meta`.
 
 ### Console Output for Debugging
 
