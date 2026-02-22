@@ -1,0 +1,8 @@
+servers:
+  - name: text
+    url: ${MCP_TEXT_URL:-http://localhost:8001/mcp}
+    enabled: true
+
+  - name: numbers
+    url: ${MCP_NUMBERS_URL:-http://localhost:8002/mcp}
+    enabled: true

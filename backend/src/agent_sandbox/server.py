@@ -1,65 +1,35 @@
 """AG-UI server for Agent Sandbox."""
 
-import asyncio
 import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
-from agent_framework import ChatAgent, MCPStreamableHTTPTool
-from agent_framework._agents import AgentProtocol
+from agent_framework import ChatAgent
+from agent_framework.observability import configure_otel_providers, get_tracer
 from agent_framework_ag_ui import add_agent_framework_fastapi_endpoint
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from opentelemetry import trace
+from mcp.server.fastmcp.server import StreamableHTTPASGIApp
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp_trace_context import TracingTool
+from opentelemetry.instrumentation.starlette import StarletteInstrumentor
+from starlette.applications import Starlette
+from starlette.routing import Route
 
-from agent_sandbox.agents.mock_agent import MockAgent
-from agent_sandbox.otel_utils import inject_otel_context_to_meta
-from agent_sandbox.telemetry import configure_mcp_telemetry, instrument_mcp_app
+from agent_sandbox.agents.mock_chat_client import MockChatClient
+from agent_sandbox.registry.mcp_registry import MCPServerRegistry
 
+# Configure OpenTelemetry using Agent Framework (must be done BEFORE app creation)
+# Reads from environment: ENABLE_INSTRUMENTATION, OTEL_EXPORTER_OTLP_*_ENDPOINT
+configure_otel_providers()
 
-# Configure OpenTelemetry observability (must be done BEFORE app creation)
-# Uses HTTP/protobuf protocol for SigNoz compatibility
-if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
-    configure_mcp_telemetry("agent-sandbox-server")
-
-    # Enable httpx instrumentation for trace context propagation to MCP servers
-    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-    HTTPXClientInstrumentor().instrument()
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Set up logging
 logger = logging.getLogger(__name__)
+tracer = get_tracer()
 
-
-class TracingMCPTool(MCPStreamableHTTPTool):
-    """MCPStreamableHTTPTool subclass that propagates trace context via _meta.
-
-    HTTP headers don't work for MCP trace propagation because the MCP library
-    spawns internal async tasks that break OpenTelemetry context. Instead, we
-    inject trace context into the _meta field which is passed through the MCP
-    JSON-RPC protocol.
-
-    Based on: https://github.com/timvw/fastmcp-otel-langfuse
-    """
-
-    async def call_tool(self, tool_name: str, **kwargs: Any) -> Any:
-        """Override call_tool to inject trace context via _meta field."""
-        # Inject current trace context into _meta
-        meta = inject_otel_context_to_meta()
-        if meta:
-            kwargs["_meta"] = meta
-
-        return await super().call_tool(tool_name, **kwargs)
-
-
-# Multi-server configuration: (name, url) tuples
-# Add new servers here - each entry creates an MCPStreamableHTTPTool
-MCP_SERVERS: list[tuple[str, str]] = [
-    ("text", os.environ.get("MCP_TEXT_URL", "http://localhost:8001/mcp")),
-    ("numbers", os.environ.get("MCP_NUMBERS_URL", "http://localhost:8002/mcp")),
-]
 
 # Agent configuration
 AGENT_NAME = "AGUIAssistant"
@@ -147,102 +117,178 @@ def _create_chat_agent(
     )
 
 
-async def create_mcp_tools() -> list[TracingMCPTool]:
+def get_default_config_path() -> Path:
+    """Get the default path for MCP server configuration.
+
+    Returns:
+        Path to mcp-servers.yaml in the backend directory
+    """
+    return Path(__file__).parent.parent.parent / "mcp-servers.yaml"
+
+
+async def create_mcp_tools(config_path: Path | None = None) -> list[TracingTool]:
     """Create and connect to all configured MCP servers.
 
+    Loads server configuration from YAML file using MCPServerRegistry.
     Handles individual server failures gracefully - if a server is unavailable,
-    it logs a warning and continues with the remaining servers. Retries
-    connections to handle startup race conditions.
+    it logs a warning and continues with the remaining servers.
 
-    Uses TracingMCPTool which injects trace context via _meta field for
+    Uses TracingTool which injects trace context via _meta field for
     proper distributed tracing across MCP boundaries.
-    """
-    tools: list[TracingMCPTool] = []
-    max_retries = 3
-    retry_delay = 1.0
 
-    for name, url in MCP_SERVERS:
-        for attempt in range(max_retries):
-            try:
-                # Create tool with trace context propagation via _meta field
-                tool = TracingMCPTool(
-                    name=f"{name}-tools",
-                    url=url,
-                    description=f"Tools provided by the {name} MCP server",
-                )
-                await tool.connect()
-                tools.append(tool)
-                logger.info(f"Connected to MCP server '{name}' at {url}")
-                break
-            except asyncio.CancelledError:
-                # Don't retry on cancellation - propagate it
-                raise
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_delay)
-                else:
-                    logger.warning(
-                        f"MCP server '{name}' unavailable at {url}: {e}")
-    return tools
+    Args:
+        config_path: Optional path to config file. If None, uses MCP_CONFIG_PATH
+                     env var or defaults to mcp-servers.yaml in backend directory.
+
+    Returns:
+        List of connected TracingTool instances
+    """
+    with tracer.start_as_current_span("server.create_mcp_tools") as span:
+        # Determine config path
+        path = config_path
+        if path is None and not os.environ.get("MCP_CONFIG_PATH"):
+            path = get_default_config_path()
+
+        # Load registry from config
+        registry = MCPServerRegistry.load(path)
+
+        # Log loaded configuration
+        enabled_servers = registry.get_enabled_servers()
+        logger.info(
+            "Loaded MCP config: enabled_servers=%d, names=%s",
+            len(enabled_servers),
+            [s.name for s in enabled_servers],
+        )
+        span.set_attribute("config.enabled_servers", len(enabled_servers))
+
+        # Get tools from registry
+        return await registry.get_all_tools()
 
 
 def create_agent(
-    mcp_tools: list[TracingMCPTool] | None = None,
-) -> AgentProtocol:
-    """Create the appropriate agent based on environment configuration.
+    mcp_tools: list[TracingTool] | None = None,
+) -> ChatAgent:
+    """Create the agent with appropriate chat client based on LLM_PROVIDER.
 
     Uses LLM_PROVIDER env var to select:
-    - 'mock' (default): MockAgent for testing
+    - 'mock' (default): ChatAgent with MockChatClient for testing
     - 'azure': ChatAgent with AzureOpenAIChatClient
+
+    Both providers return ChatAgent, enabling unified as_mcp_server() support.
     """
-    provider = os.environ.get("LLM_PROVIDER", "mock").lower()
-    logger.info(f"Using LLM provider: {provider}")
+    with tracer.start_as_current_span("server.create_agent") as span:
+        provider = os.environ.get("LLM_PROVIDER", "mock").lower()
+        logger.info("Using LLM provider: %s", provider)
+        span.set_attribute("llm.provider", provider)
 
-    tools: list[Any] = list(mcp_tools) if mcp_tools else []
+        tools: list[Any] = list(mcp_tools) if mcp_tools else []
+        span.set_attribute("tool_count", len(tools))
 
-    if provider == "mock":
-        return MockAgent(tools=tools)
+        if provider == "mock":
+            chat_client = MockChatClient(tools=tools)
+            return _create_chat_agent(chat_client, tools)
 
-    # Azure OpenAI
-    from agent_framework.azure import AzureOpenAIChatClient
-    from azure.identity import AzureCliCredential
+        # Azure OpenAI
+        from agent_framework.azure import AzureOpenAIChatClient
+        from azure.identity import AzureCliCredential
 
-    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
-    deployment_name = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME")
+        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+        deployment_name = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME")
 
-    if not endpoint:
-        raise ValueError(
-            "AZURE_OPENAI_ENDPOINT environment variable is required"
+        if not endpoint:
+            raise ValueError(
+                "AZURE_OPENAI_ENDPOINT environment variable is required"
+            )
+        if not deployment_name:
+            raise ValueError(
+                "AZURE_OPENAI_DEPLOYMENT_NAME environment variable is required"
+            )
+
+        span.set_attribute("azure.deployment", deployment_name)
+
+        chat_client = AzureOpenAIChatClient(
+            credential=AzureCliCredential(),
+            endpoint=endpoint,
+            deployment_name=deployment_name,
         )
-    if not deployment_name:
-        raise ValueError(
-            "AZURE_OPENAI_DEPLOYMENT_NAME environment variable is required"
-        )
 
-    chat_client = AzureOpenAIChatClient(
-        credential=AzureCliCredential(),
-        endpoint=endpoint,
-        deployment_name=deployment_name,
+        return _create_chat_agent(chat_client, tools)
+
+
+def create_mcp_asgi(
+    mcp_server: Any,
+    *,
+    stateless: bool = False,
+) -> tuple[Starlette, StreamableHTTPSessionManager]:
+    """Create an ASGI app from an MCP Server.
+
+    Args:
+        mcp_server: The MCP Server instance (from agent.as_mcp_server())
+        stateless: Whether to use stateless sessions (default False)
+
+    Returns:
+        A tuple of (Starlette app, session_manager)
+    """
+    session_manager = StreamableHTTPSessionManager(
+        app=mcp_server,
+        event_store=None,
+        json_response=False,
+        stateless=stateless,
     )
+    asgi_app = StreamableHTTPASGIApp(session_manager)
+    starlette_app = Starlette(routes=[Route("/", endpoint=asgi_app)])
 
-    return _create_chat_agent(chat_client, tools)
+    # Instrument for tracing if OTEL is enabled
+    if os.environ.get("ENABLE_INSTRUMENTATION", "").lower() == "true":
+        StarletteInstrumentor.instrument_app(starlette_app)
+
+    return starlette_app, session_manager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Connect to MCP servers and register agent endpoint at startup."""
-    try:
-        mcp_tools = await create_mcp_tools()
-        total = sum(len(t.functions) for t in mcp_tools)
-        logger.info(
-            f"Connected to {len(mcp_tools)} MCP servers, {total} tools")
-    except Exception as e:
-        logger.warning(f"MCP connection failed: {e}. Running without tools.")
-        mcp_tools = []
+    with tracer.start_as_current_span(
+        "server.startup",
+        attributes={"server.name": "agent-sandbox-server"},
+    ) as startup_span:
+        try:
+            mcp_tools = await create_mcp_tools()
+            total = sum(len(t.functions) for t in mcp_tools)
+            logger.info(
+                "Connected to MCP servers: server_count=%d, tool_count=%d",
+                len(mcp_tools),
+                total,
+            )
+            startup_span.set_attribute("mcp.server_count", len(mcp_tools))
+            startup_span.set_attribute("mcp.tool_count", total)
+        except Exception as e:
+            logger.warning(
+                "MCP connection failed, running without tools: %s",
+                str(e),
+            )
+            startup_span.set_attribute("mcp.error", str(e))
+            startup_span.record_exception(e)
+            mcp_tools = []
 
-    agent = create_agent(mcp_tools=mcp_tools or None)
-    add_agent_framework_fastapi_endpoint(app, agent, "/")
-    yield
+        agent = create_agent(mcp_tools=mcp_tools or None)
+
+        # Mount AG-UI at /ag-ui (moved from /)
+        add_agent_framework_fastapi_endpoint(app, agent, "/ag-ui")
+        logger.info("Mounted AG-UI endpoint at /ag-ui")
+
+        # Create and mount MCP server at /mcp
+        mcp_server = agent.as_mcp_server(server_name="agent-sandbox")
+        mcp_asgi, session_manager = create_mcp_asgi(
+            mcp_server, stateless=True
+        )
+        app.mount("/mcp", mcp_asgi)
+        logger.info("Mounted MCP endpoint at /mcp")
+        startup_span.set_attribute("startup.complete", True)
+
+    # Run session manager within the app's lifespan
+    async with session_manager.run():
+        yield
 
 
 # Create app with lifespan manager
@@ -261,8 +307,8 @@ app.add_middleware(
 
 # Instrument Starlette/FastAPI for tracing AFTER CORS middleware
 # This ensures trace context extraction happens on the actual request
-if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
-    instrument_mcp_app(app)
+if os.environ.get("ENABLE_INSTRUMENTATION", "").lower() == "true":
+    StarletteInstrumentor.instrument_app(app)
 
 
 @app.get("/health")

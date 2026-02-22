@@ -164,7 +164,81 @@ class UserService {
 
 ## Testing Patterns
 
-Write tests using the project's testing framework (Vitest for this project):
+Write tests using the project's testing framework (Vitest for this project).
+
+### Testing Philosophy
+
+**Test our code, not third-party packages.** Focus tests on the behavior of your own code. Mock external dependencies at the boundary. Do not test that libraries work correctly—trust their own test suites.
+
+```typescript
+// BAD: Testing that fetch works
+it("fetch returns data", async () => {
+  const response = await fetch("https://api.example.com");
+  expect(response.ok).toBe(true); // Testing fetch, not our code
+});
+
+// GOOD: Testing our code's behavior with mocked dependency
+it("returns parsed user data", async () => {
+  mockHttpClient.get.mockResolvedValue({ name: "test" });
+  const result = await userService.getUser(TestDefaults.USER_ID);
+  expect(result.name).toBe("test"); // Testing our parsing logic
+});
+```
+
+### Avoid Magic Strings
+
+Define constants for test values to improve readability and maintainability.
+
+```typescript
+// BAD: Magic strings scattered throughout tests
+it("creates user", () => {
+  const user = createUser("John Doe", "john@example.com");
+  expect(user.name).toBe("John Doe");
+});
+
+// GOOD: Use constants
+const TestDefaults = {
+  USER_NAME: "Test User",
+  USER_EMAIL: "test@example.com",
+  USER_ID: "user-123",
+} as const;
+
+it("creates user", () => {
+  const user = createUser(TestDefaults.USER_NAME, TestDefaults.USER_EMAIL);
+  expect(user.name).toBe(TestDefaults.USER_NAME);
+});
+```
+
+### Parameterized Tests
+
+Use `it.each` for testing multiple scenarios with shared logic.
+
+```typescript
+// BAD: Repetitive individual tests
+it("validates empty string", () => {
+  expect(validate("")).toBe(false);
+});
+it("validates whitespace", () => {
+  expect(validate("   ")).toBe(false);
+});
+it("validates valid input", () => {
+  expect(validate("hello")).toBe(true);
+});
+
+// GOOD: Parameterized test
+it.each([
+  { input: "", expected: false, description: "empty string" },
+  { input: "   ", expected: false, description: "whitespace only" },
+  { input: "hello", expected: true, description: "valid word" },
+  { input: "hello world", expected: true, description: "multi-word" },
+])("validates $description", ({ input, expected }) => {
+  expect(validate(input)).toBe(expected);
+});
+```
+
+### Keep Tests Concise
+
+Each test should verify one behavior. Use `beforeEach` to reduce boilerplate.
 
 ```typescript
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -187,23 +261,45 @@ describe("UserService", () => {
   });
 
   it("fetches user by id", async () => {
-    const expectedUser = { id: "123", name: "Test User" };
+    const expectedUser = {
+      id: TestDefaults.USER_ID,
+      name: TestDefaults.USER_NAME,
+    };
     vi.mocked(mockHttpClient.get).mockResolvedValue(expectedUser);
 
-    const user = await userService.getUser("123");
+    const user = await userService.getUser(TestDefaults.USER_ID);
 
     expect(user).toEqual(expectedUser);
-    expect(mockHttpClient.get).toHaveBeenCalledWith("/users/123");
+    expect(mockHttpClient.get).toHaveBeenCalledWith(
+      `/users/${TestDefaults.USER_ID}`,
+    );
   });
 
   it("logs info when fetching user", async () => {
-    vi.mocked(mockHttpClient.get).mockResolvedValue({ id: "123" });
+    vi.mocked(mockHttpClient.get).mockResolvedValue({
+      id: TestDefaults.USER_ID,
+    });
 
-    await userService.getUser("123");
+    await userService.getUser(TestDefaults.USER_ID);
 
-    expect(mockLogger.info).toHaveBeenCalledWith("Fetching user 123");
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      `Fetching user ${TestDefaults.USER_ID}`,
+    );
   });
 });
+```
+
+### Testing Boundaries
+
+Mock at the integration boundary, not deep within your code:
+
+```typescript
+// BAD: Mocking internal implementation details
+vi.mock("../internal/privateHelper"); // Brittle: breaks when internals change
+
+// GOOD: Mock at the boundary (injected dependency)
+const mockClient = { fetch: vi.fn() };
+const service = new UserService(mockClient); // Stable: tests our interface
 ```
 
 ## Testing Expectations

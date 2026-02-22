@@ -167,6 +167,9 @@ Keep iterating until explicit approval or handoff.
 **Verification**
 {How to test: commands, tests, manual checks}
 
+**Code Review**
+{Mandatory self-review using code-review.instructions.md checklist before marking complete}
+
 **Decisions** (if applicable)
 
 - {Decision: chose X over Y}
@@ -180,4 +183,5 @@ Rules:
 - TDD is mandatory: every implementation step starts with a failing test
 - Apply all SOLID principles: Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion
 - Address security per OWASP guidelines in security.instructions.md
+- Include code review step: all implementation plans must end with self-review per code-review.instructions.md
   </plan_style_guide>

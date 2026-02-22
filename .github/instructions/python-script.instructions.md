@@ -380,7 +380,79 @@ backend/
         └── test_client.py
 ```
 
-Use fixtures for common setup:
+### Testing Philosophy
+
+**Test our code, not third-party packages.** Focus tests on the behavior of your own code. Mock external dependencies at the boundary. Do not test that libraries work correctly—trust their own test suites.
+
+```python
+# BAD: Testing that httpx works
+async def test_httpx_makes_request():
+    response = await httpx.get("https://api.example.com")
+    assert response.status_code == 200  # Testing httpx, not our code
+
+# GOOD: Testing our code's behavior with mocked dependency
+async def test_client_returns_parsed_data(mock_http_client):
+    mock_http_client.get.return_value = {"name": "test"}
+    result = await our_client.fetch_user("123")
+    assert result.name == "test"  # Testing our parsing logic
+```
+
+### Avoid Magic Strings
+
+Define constants for test values to improve readability and maintainability.
+
+```python
+# BAD: Magic strings scattered throughout tests
+def test_user_creation():
+    user = User(name="John Doe", email="john@example.com")
+    assert user.name == "John Doe"
+
+# GOOD: Use constants
+class TestUserDefaults:
+    NAME = "Test User"
+    EMAIL = "test@example.com"
+    USER_ID = "user-123"
+
+def test_user_creation():
+    user = User(name=TestUserDefaults.NAME, email=TestUserDefaults.EMAIL)
+    assert user.name == TestUserDefaults.NAME
+```
+
+### Parameterized Tests
+
+Use `@pytest.mark.parametrize` for testing multiple scenarios with shared logic.
+
+```python
+import pytest
+
+# BAD: Repetitive individual tests
+def test_validate_empty_string():
+    assert validate("") is False
+
+def test_validate_whitespace():
+    assert validate("   ") is False
+
+def test_validate_valid_input():
+    assert validate("hello") is True
+
+# GOOD: Parameterized test
+@pytest.mark.parametrize(
+    "input_value,expected",
+    [
+        ("", False),
+        ("   ", False),
+        ("hello", True),
+        ("hello world", True),
+    ],
+    ids=["empty", "whitespace", "single-word", "multi-word"],
+)
+def test_validate_input(input_value: str, expected: bool):
+    assert validate(input_value) is expected
+```
+
+### Keep Tests Concise
+
+Each test should verify one behavior. Use fixtures to reduce boilerplate.
 
 ```python
 import pytest
@@ -403,4 +475,20 @@ async def test_agent_responds(agent):
     """Agent should return LLM response."""
     response = await agent.process("Hello")
     assert response == "Test response"
+```
+
+### Testing Boundaries
+
+Mock at the integration boundary, not deep within your code:
+
+```python
+# BAD: Mocking internal implementation details
+def test_service_with_deep_mocks(mocker):
+    mocker.patch("package.internal.module._private_helper")
+    # Brittle: breaks when internals change
+
+# GOOD: Mock at the boundary (injected dependency)
+def test_service_with_injected_mock(mock_http_client):
+    service = UserService(http_client=mock_http_client)
+    # Stable: only tests our service's interface
 ```

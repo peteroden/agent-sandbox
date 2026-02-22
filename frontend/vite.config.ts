@@ -31,6 +31,16 @@ export default defineConfig({
           'X-Forwarded-Proto': 'http',
         },
       },
+      '/ag-ui': {
+        target: 'http://0.0.0.0:8888',
+        changeOrigin: true,
+      },
+      // Use regex to match /mcp exactly or /mcp/ paths, but NOT /mcp-chat
+      '^/mcp(/|$)': {
+        target: 'http://0.0.0.0:8888',
+        changeOrigin: true,
+        rewrite: (path: string) => path,
+      },
       // Proxy OTLP endpoints for browser telemetry (avoids CORS issues with SigNoz)
       '/v1/traces': {
         target: 'http://localhost:4318',

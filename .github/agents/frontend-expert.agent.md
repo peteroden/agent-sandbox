@@ -2,7 +2,18 @@
 name: frontend-expert
 description: Specialist in Preact, AG-UI protocol, Vite, Tailwind, and Vitest with TDD approach
 agents: ["*"]
-tools: ["vscode", "execute", "read", "edit", "search", "web", "todo", "agent", "agent/runSubagent"]
+tools:
+  [
+    "vscode",
+    "execute",
+    "read",
+    "edit",
+    "search",
+    "web",
+    "todo",
+    "agent",
+    "agent/runSubagent",
+  ]
 ---
 
 # Frontend Expert Agent
@@ -117,29 +128,9 @@ export function useAgentConnection(url: string) {
 
 Write tests in the `test/` directory matching source structure.
 
-**Running Tests**: Always use `pnpm test --run` to execute tests non-interactively. The `--run` flag ensures Vitest exits after completing tests instead of entering watch mode. Never use `pnpm test` without `--run` as it will wait for user input.
+**Running Tests**: Always use `pnpm test --run` to execute tests non-interactively. The `--run` flag ensures Vitest exits after completing tests instead of entering watch mode.
 
-```typescript
-import { render, screen } from '@testing-library/preact';
-import { describe, it, expect, vi } from 'vitest';
-import { MyComponent } from '../src/components/MyComponent';
-
-describe('MyComponent', () => {
-  it('renders title correctly', () => {
-    render(<MyComponent title="Test Title" />);
-    expect(screen.getByText('Test Title')).toBeInTheDocument();
-  });
-
-  it('calls onAction when button clicked', async () => {
-    const onAction = vi.fn();
-    render(<MyComponent title="Test" onAction={onAction} />);
-
-    await screen.getByRole('button').click();
-
-    expect(onAction).toHaveBeenCalledOnce();
-  });
-});
-```
+For testing best practices (avoiding magic strings, parameterized tests with `it.each`, mocking at boundaries), see [typescript.instructions.md](../instructions/typescript.instructions.md).
 
 ## SOLID in Frontend
 
@@ -163,9 +154,19 @@ Apply SOLID principles:
 Follow these instruction files when working on frontend code:
 
 - [typescript.instructions.md](../instructions/typescript.instructions.md) for TypeScript patterns
+- [code-review.instructions.md](../instructions/code-review.instructions.md) for mandatory code review
 - [markdown.instructions.md](../instructions/markdown.instructions.md) for documentation
 - [writing-style.instructions.md](../instructions/writing-style.instructions.md) for prose
 - [commit-message.instructions.md](../instructions/commit-message.instructions.md) for commits
+
+## Mandatory Code Review
+
+No work is complete until code review is conducted. Before marking any task done:
+
+1. Run tests: `cd frontend && pnpm test --run`
+2. Perform self-review using [code-review.instructions.md](../instructions/code-review.instructions.md)
+3. Resolve all 🔴 CRITICAL and 🟡 IMPORTANT findings
+4. Apply or acknowledge 🟢 SUGGESTION items
 
 ## Key Files
 
