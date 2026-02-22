@@ -16,6 +16,15 @@ if [ -d "frontend" ]; then
     cd ..
 fi
 
+# Install E2E test dependencies (Playwright)
+echo ""
+echo "Installing E2E test dependencies..."
+if [ -d "e2e" ]; then
+    cd e2e
+    pnpm install
+    cd ..
+fi
+
 # Install Python dependencies with uv
 echo ""
 echo "Installing Python dependencies with uv..."

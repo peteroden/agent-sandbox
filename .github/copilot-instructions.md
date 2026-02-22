@@ -37,10 +37,11 @@ Apply SOLID principles throughout:
 No coding work is considered complete until:
 
 1. Implementation is finished
-2. Tests pass
-3. **Self-review using [code-review.instructions.md](instructions/code-review.instructions.md) checklist**
-4. All 🔴 CRITICAL and 🟡 IMPORTANT issues resolved
-5. 🟢 SUGGESTION items applied or acknowledged
+2. Unit tests pass (`cd frontend && pnpm test --run`, `cd backend && uv run pytest`)
+3. E2E tests pass (`cd e2e && pnpm test`)
+4. **Self-review using [code-review.instructions.md](instructions/code-review.instructions.md) checklist**
+5. All 🔴 CRITICAL and 🟡 IMPORTANT issues resolved
+6. 🟢 SUGGESTION items applied or acknowledged
 
 This applies to all code changes, whether implementing new features, fixing bugs, or refactoring.
 
@@ -63,6 +64,9 @@ This applies to all code changes, whether implementing new features, fixing bugs
 │   │       ├── models/          # Pydantic models
 │   │       └── services/        # Business logic
 │   └── tests/                   # pytest tests
+├── e2e/                         # Playwright end-to-end tests
+│   ├── tests/                   # Test specifications
+│   └── helpers/                 # Shared test utilities
 └── .github/
     ├── agents/                  # Custom Copilot agents
     ├── instructions/            # Auto-applied instructions
@@ -78,6 +82,7 @@ This applies to all code changes, whether implementing new features, fixing bugs
 | MCP Server      | FastMCP      | <https://gofastmcp.com>                                |
 | Data Validation | Pydantic     | <https://docs.pydantic.dev>                            |
 | LLM             | Azure OpenAI | <https://learn.microsoft.com/azure/ai-services/openai> |
+| E2E Testing     | Playwright   | <https://playwright.dev>                               |
 
 ## Environment Variables
 
@@ -166,6 +171,18 @@ uv run pytest      # Run tests
 LLM_PROVIDER=mock uv run python -m agent_sandbox.server  # Start server
 ```
 
+#### E2E Tests
+
+```bash
+cd e2e
+pnpm install       # Install Playwright + Chromium
+pnpm test          # Run all E2E tests (auto-starts dev servers)
+pnpm test:ui       # Interactive UI mode
+pnpm test:debug    # Debug mode with inspector
+```
+
+E2E tests use `scripts/dev.sh --mock` via Playwright's `webServer` config and run against Chromium.
+
 ## Commit Conventions
 
 Use conventional commits with project-specific scopes:
@@ -176,6 +193,7 @@ Use conventional commits with project-specific scopes:
 - `feat(mcp)`: MCP/FastMCP changes
 - `fix(...)`: Bug fixes
 - `test(...)`: Test additions/fixes
+- `test(e2e)`: End-to-end test changes
 - `docs(...)`: Documentation
 
 See [commit-message.instructions.md](.github/instructions/commit-message.instructions.md) for full details.

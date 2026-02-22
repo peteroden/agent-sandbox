@@ -39,6 +39,14 @@ pnpm test        # Run tests in watch mode
 pnpm test:ui     # Run tests with UI
 ```
 
+### E2E Tests
+
+End-to-end tests live in the `e2e/` directory at the project root and run against the full stack (frontend + backend + MCP servers) using Playwright. See the [E2E README](../e2e/README.md) for details.
+
+```bash
+cd e2e && pnpm test
+```
+
 ### Preview Production Build
 
 ```bash
