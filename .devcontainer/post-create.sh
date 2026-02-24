@@ -22,6 +22,7 @@ echo "Installing E2E test dependencies..."
 if [ -d "e2e" ]; then
     cd e2e
     pnpm install
+    pnpm exec playwright install chromium
     cd ..
 fi
 
