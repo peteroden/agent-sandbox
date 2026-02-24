@@ -237,7 +237,25 @@ await tool.connect()
 
 ## Viewing Traces
 
-### SigNoz (Recommended)
+### Lightweight Dev Collector (Recommended for Development)
+
+The dev collector is a single-process Python OTLP collector that stores data in SQLite. No Docker required.
+
+```bash
+# Start with the dev collector
+./scripts/dev.sh --observe --mock
+
+# Dashboard at http://localhost:5173/observe
+```
+
+The observe dashboard shows metrics, traces, and logs in a single view with cross-signal correlation. Click a trace to see its spans in a waterfall view, click a span to see its attributes and correlated logs.
+
+Configuration:
+
+- `COLLECTOR_RETAIN_MINUTES` — auto-prune threshold (default: 60 minutes)
+- `COLLECTOR_DB_PATH` — SQLite database path (default: `collector/.dev-collector.db`)
+
+### SigNoz
 
 1. Start with `./scripts/dev.sh --signoz`
 2. Open http://localhost:8080
