@@ -134,6 +134,37 @@ class TestDecodeTraces:
         assert spans[0]["name"] == SAMPLE_SPAN_NAME
         assert spans[0]["service_name"] == SAMPLE_SERVICE_NAME
 
+    def test_json_hex_trace_ids(self):
+        """Browser OTel SDKs send hex-encoded IDs in JSON, not base64."""
+        import json
+        trace_id_hex = "0a0b0c0d0e0f1011" + "0" * 16
+        span_id_hex = "1a1b1c1d1e1f1011"
+        body = json.dumps({
+            "resourceSpans": [{
+                "resource": {"attributes": [
+                    {"key": "service.name", "value": {"stringValue": SAMPLE_SERVICE_NAME}},
+                ]},
+                "scopeSpans": [{
+                    "spans": [{
+                        "traceId": trace_id_hex,
+                        "spanId": span_id_hex,
+                        "parentSpanId": "",
+                        "name": SAMPLE_SPAN_NAME,
+                        "startTimeUnixNano": str(START_NS),
+                        "endTimeUnixNano": str(END_NS),
+                    }],
+                }],
+            }],
+        }).encode()
+
+        spans, _ = decode_traces(body, CONTENT_TYPE_JSON)
+
+        assert len(spans) == 1
+        assert spans[0]["trace_id"] == trace_id_hex
+        assert spans[0]["span_id"] == span_id_hex
+        assert len(spans[0]["trace_id"]) == 32
+        assert len(spans[0]["span_id"]) == 16
+
     def test_empty_request(self):
         request = ExportTraceServiceRequest()
         body = request.SerializeToString()

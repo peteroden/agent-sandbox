@@ -228,10 +228,39 @@ def _number_data_point(dp, metric_type: str) -> dict:
 
 # ── Helpers ──────────────────────────────────────────────────
 
+# OTLP JSON uses hex-encoded bytes for trace/span IDs, but protobuf's
+# JSON parser expects base64 for `bytes` fields. We convert before parsing.
+_HEX_ID_FIELDS = {"traceId", "spanId", "parentSpanId"}
+
+
+def _hex_to_base64(hex_str: str) -> str:
+    """Convert a hex-encoded ID to base64 for protobuf JSON parsing."""
+    import base64
+    try:
+        return base64.b64encode(bytes.fromhex(hex_str)).decode()
+    except ValueError:
+        return hex_str
+
+
+def _fix_ids_in_json(obj):
+    """Recursively convert hex ID fields to base64 in an OTLP JSON payload."""
+    if isinstance(obj, dict):
+        return {
+            k: _hex_to_base64(v) if k in _HEX_ID_FIELDS and isinstance(v, str) and v else _fix_ids_in_json(v)
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_fix_ids_in_json(item) for item in obj]
+    return obj
+
+
 def _parse_message(message_class, body: bytes, content_type: str):
     """Parse a protobuf or JSON body into a message."""
     if content_type == CONTENT_TYPE_JSON:
-        return Parse(body, message_class())
+        import json
+        data = json.loads(body)
+        fixed = _fix_ids_in_json(data)
+        return Parse(json.dumps(fixed).encode(), message_class())
     msg = message_class()
     msg.ParseFromString(body)
     return msg
