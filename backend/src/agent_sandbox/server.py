@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mcp.server.fastmcp.server import StreamableHTTPASGIApp
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.starlette import StarletteInstrumentor
 from starlette.applications import Starlette
 from starlette.routing import Route
@@ -308,6 +309,7 @@ app.add_middleware(
 # This ensures trace context extraction happens on the actual request
 if os.environ.get("ENABLE_INSTRUMENTATION", "").lower() == "true":
     StarletteInstrumentor.instrument_app(app)
+    HTTPXClientInstrumentor().instrument()
 
 
 @app.get("/health")
