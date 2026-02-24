@@ -235,17 +235,29 @@ class Storage:
             params.append(since_ns)
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        # Use a subquery to find the real root span (no parent) per trace,
+        # then join back for accurate root_span_name and service_name.
         query = f"""
-            SELECT trace_id,
-                   MIN(name) as root_span_name,
-                   MIN(service_name) as service_name,
-                   MIN(start_time_unix_nano) as start_time_unix_nano,
-                   MAX(end_time_unix_nano) - MIN(start_time_unix_nano) as duration_ns,
-                   COUNT(*) as span_count
-            FROM spans
-            {where}
-            GROUP BY trace_id
-            ORDER BY MIN(start_time_unix_nano) DESC
+            SELECT g.trace_id,
+                   COALESCE(root.name, g.first_name) as root_span_name,
+                   COALESCE(root.service_name, g.first_service) as service_name,
+                   g.start_time_unix_nano,
+                   g.duration_ns,
+                   g.span_count
+            FROM (
+                SELECT trace_id,
+                       MIN(name) as first_name,
+                       MIN(service_name) as first_service,
+                       MIN(start_time_unix_nano) as start_time_unix_nano,
+                       MAX(end_time_unix_nano) - MIN(start_time_unix_nano) as duration_ns,
+                       COUNT(*) as span_count
+                FROM spans
+                {where}
+                GROUP BY trace_id
+            ) g
+            LEFT JOIN spans root
+                ON root.trace_id = g.trace_id AND root.parent_span_id = ''
+            ORDER BY g.start_time_unix_nano DESC
             LIMIT ?
         """  # noqa: S608
         params.append(limit)

@@ -96,8 +96,14 @@ export interface ObserveState {
 const DEFAULT_POLL_INTERVAL_MS = 5000
 const BASE_URL = '/api/observe'
 
+// Resolve the native (un-instrumented) fetch lazily to bypass OTel zone.js
+// patching in the browser, while still allowing tests to mock global.fetch.
+function getNativeFetch(): typeof fetch {
+  return (globalThis as Record<string, unknown>).__zone_symbol__fetch as typeof fetch ?? fetch
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url)
+  const response = await getNativeFetch()(url)
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`)
   }
@@ -183,7 +189,7 @@ export function useObserve() {
 
   const clearData = useCallback(async () => {
     try {
-      const response = await fetch(`${BASE_URL}/data`, { method: 'DELETE' })
+      const response = await getNativeFetch()(`${BASE_URL}/data`, { method: 'DELETE' })
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
