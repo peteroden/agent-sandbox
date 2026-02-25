@@ -6,8 +6,8 @@ the Agent class. This client provides the streaming response logic.
 
 import logging
 import uuid
-from collections.abc import AsyncIterable, Mapping, Sequence
-from typing import Any, Awaitable, ClassVar
+from collections.abc import AsyncIterable, Awaitable, Mapping, Sequence
+from typing import Any, ClassVar
 
 from agent_framework import (
     BaseChatClient,

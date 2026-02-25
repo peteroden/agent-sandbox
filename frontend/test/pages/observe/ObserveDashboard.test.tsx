@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/preact'
 import { ObserveDashboard } from '../../../src/pages/observe/ObserveDashboard'
 
-const MOCK_OBSERVE_RETURN = {
+const MOCK_OBSERVE_RETURN: Record<string, unknown> = {
   services: ['test-service'],
   traces: [],
   logs: [],
