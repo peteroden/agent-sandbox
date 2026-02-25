@@ -112,6 +112,7 @@ def system_stats() -> str:
 
     with tracer.start_as_current_span("tool.system_stats.collect"):
         stats = _get_system_stats()
+        stats["_view_uri"] = VIEW_URI
         logger.info(
             "System stats: cpu=%.1f%% mem=%.1f%% disk=%.1f%%",
             stats["cpu_percent"],

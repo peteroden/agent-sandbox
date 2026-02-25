@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, cleanup } from '@testing-library/preact'
-import { useMcpChat } from '../../src/hooks/useMcpChat'
+import { useMcpChat, extractViewUris } from '../../src/hooks/useMcpChat'
 
 // Test constants
 const TOOL_NAME = 'test-tool'
 const USER_MESSAGE = 'Hello, agent!'
 const ASSISTANT_MESSAGE = 'Hello! How can I help you?'
 const TOOL_CALL_ERROR = 'Tool call failed'
+const VIEW_URI = 'ui://demo-app/view.html'
+const VIEW_HTML = '<html><body>Stats</body></html>'
 
 // Hoist mock functions
 const { mockCallTool } = vi.hoisted(() => ({
@@ -27,6 +29,7 @@ vi.stubGlobal('crypto', { randomUUID: () => 'test-uuid' })
 describe('useMcpChat', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubGlobal('fetch', vi.fn())
   })
 
   afterEach(() => {
@@ -167,5 +170,75 @@ describe('useMcpChat', () => {
         'First', 'Second', 'Third',
       ])
     })
+  })
+
+  describe('MCP App view detection', () => {
+    it('fetches HTML when response contains ui:// URI', async () => {
+      const toolResult = [
+        { type: 'text', text: `Stats: ${VIEW_URI}` },
+      ]
+      mockCallTool.mockResolvedValueOnce(toolResult)
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(VIEW_HTML),
+      } as Response)
+
+      const { result } = renderHook(() => useMcpChat())
+
+      await act(() => result.current.callTool(TOOL_NAME, {}))
+
+      expect(fetch).toHaveBeenCalledWith(
+        `/api/mcp-resource?uri=${encodeURIComponent(VIEW_URI)}`,
+      )
+      const msg = result.current.messages[0]
+      const resourceItem = msg.toolResult?.find(i => i.htmlContent)
+      expect(resourceItem?.htmlContent).toBe(VIEW_HTML)
+      expect(resourceItem?.uri).toBe(VIEW_URI)
+    })
+
+    it('continues without view on fetch failure', async () => {
+      const toolResult = [
+        { type: 'text', text: `Stats: ${VIEW_URI}` },
+      ]
+      mockCallTool.mockResolvedValueOnce(toolResult)
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: false,
+        statusText: 'Not Found',
+      } as Response)
+
+      const { result } = renderHook(() => useMcpChat())
+
+      await act(() => result.current.callTool(TOOL_NAME, {}))
+
+      expect(result.current.messages[0].content).toContain(VIEW_URI)
+      const resourceItem = result.current.messages[0].toolResult?.find(
+        i => i.htmlContent,
+      )
+      expect(resourceItem).toBeUndefined()
+    })
+  })
+})
+
+describe('extractViewUris', () => {
+  it('extracts ui:// URIs from text', () => {
+    const text = `Check out ui://demo-app/view.html for details`
+    expect(extractViewUris(text)).toEqual([VIEW_URI])
+  })
+
+  it('returns empty array when no URIs present', () => {
+    expect(extractViewUris('No URIs here')).toEqual([])
+  })
+
+  it('deduplicates repeated URIs', () => {
+    const text = `${VIEW_URI} and again ${VIEW_URI}`
+    expect(extractViewUris(text)).toEqual([VIEW_URI])
+  })
+
+  it('extracts multiple distinct URIs', () => {
+    const text = 'ui://a/one.html and ui://b/two.html'
+    expect(extractViewUris(text)).toEqual([
+      'ui://a/one.html',
+      'ui://b/two.html',
+    ])
   })
 })
