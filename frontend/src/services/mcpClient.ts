@@ -8,6 +8,7 @@ export interface Tool {
   name: string
   description?: string
   inputSchema?: Record<string, unknown>
+  _meta?: Record<string, unknown>
 }
 
 /**
@@ -19,6 +20,7 @@ export interface ContentItem {
   blob?: string
   mimeType?: string
   uri?: string
+  htmlContent?: string
 }
 
 /**
@@ -104,6 +106,25 @@ export class McpClientService {
     }
     const result = await this.client.callTool({ name, arguments: args })
     return result.content as ContentItem[]
+  }
+
+  /**
+   * Reads a resource from the connected MCP server.
+   *
+   * @param uri - The resource URI to read
+   * @returns The resource text content
+   * @throws Error if not connected or resource not found
+   */
+  async readResource(uri: string): Promise<string> {
+    if (!this.client) {
+      throw new Error('Not connected')
+    }
+    const result = await this.client.readResource({ uri })
+    const content = result.contents[0]
+    if (!content || !('text' in content)) {
+      throw new Error(`Resource not found: ${uri}`)
+    }
+    return content.text
   }
 
   /**

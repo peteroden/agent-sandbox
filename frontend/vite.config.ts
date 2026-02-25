@@ -40,7 +40,7 @@ export default defineConfig({
         target: 'http://0.0.0.0:8888',
         changeOrigin: true,
       },
-      // Use regex to match /mcp exactly or /mcp/ paths, but NOT /mcp-chat
+      // Use regex to match /mcp exactly or /mcp/ paths, but NOT /mcp-chat or /mcp-app
       '^/mcp(/|$)': {
         target: 'http://0.0.0.0:8888',
         changeOrigin: true,

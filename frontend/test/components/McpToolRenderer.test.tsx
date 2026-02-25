@@ -63,6 +63,39 @@ describe('McpToolRenderer', () => {
     })
   })
 
+  describe('MCP App HTML content', () => {
+    const HTML_CONTENT = '<html><body><h1>Stats Dashboard</h1></body></html>'
+
+    it('renders htmlContent in sandboxed iframe', () => {
+      const content = [{ type: 'resource', htmlContent: HTML_CONTENT }]
+
+      const { container } = render(<McpToolRenderer content={content} />)
+
+      const iframe = container.querySelector('iframe')
+      expect(iframe).not.toBeNull()
+      expect(iframe?.getAttribute('srcdoc')).toBe(HTML_CONTENT)
+      expect(iframe?.getAttribute('sandbox')).toBe('allow-scripts')
+    })
+
+    it('sets title on iframe for accessibility', () => {
+      const content = [{ type: 'resource', htmlContent: HTML_CONTENT }]
+
+      const { container } = render(<McpToolRenderer content={content} />)
+
+      const iframe = container.querySelector('iframe')
+      expect(iframe?.getAttribute('title')).toBe('MCP App View')
+    })
+
+    it('renders ui:// fallback label when no htmlContent', () => {
+      const content = [{ type: 'resource', uri: 'ui://demo/view.html' }]
+
+      const { container } = render(<McpToolRenderer content={content} />)
+
+      expect(container.textContent).toContain('UI Component: ui://demo/view.html')
+      expect(container.querySelector('iframe')).toBeNull()
+    })
+  })
+
   describe('error content', () => {
     it('displays error indicator for error results', () => {
       const content = [{ type: 'text', text: 'Error message' }]

@@ -10,12 +10,13 @@ const CONNECTION_ERROR = 'Connection failed'
 const NOT_CONNECTED_ERROR = 'Not connected'
 
 // Hoist mock functions
-const { mockConnect, mockClose, mockListTools, mockCallTool } = vi.hoisted(() => {
+const { mockConnect, mockClose, mockListTools, mockCallTool, mockReadResource } = vi.hoisted(() => {
   return {
     mockConnect: vi.fn().mockResolvedValue(undefined),
     mockClose: vi.fn().mockResolvedValue(undefined),
     mockListTools: vi.fn().mockResolvedValue({ tools: [] }),
     mockCallTool: vi.fn().mockResolvedValue({ content: [] }),
+    mockReadResource: vi.fn().mockResolvedValue({ contents: [] }),
   }
 })
 
@@ -26,6 +27,7 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
     close = mockClose
     listTools = mockListTools
     callTool = mockCallTool
+    readResource = mockReadResource
   },
 }))
 
@@ -103,6 +105,21 @@ describe('McpClientService', () => {
       expect(tools).toEqual(mockTools)
     })
 
+    it('preserves _meta on tools', async () => {
+      const mockTools: Tool[] = [
+        {
+          name: TOOL_ONE,
+          _meta: { ui: { resourceUri: 'ui://demo/view.html' } },
+        },
+      ]
+      mockListTools.mockResolvedValueOnce({ tools: mockTools })
+
+      await service.connect(TestDefaults.MCP_URL)
+      const tools = await service.listTools()
+
+      expect(tools[0]._meta).toEqual({ ui: { resourceUri: 'ui://demo/view.html' } })
+    })
+
     it('throws when not connected', async () => {
       await expect(service.listTools()).rejects.toThrow(NOT_CONNECTED_ERROR)
     })
@@ -124,6 +141,37 @@ describe('McpClientService', () => {
 
     it('throws when not connected', async () => {
       await expect(service.callTool(TOOL_ONE, {})).rejects.toThrow(NOT_CONNECTED_ERROR)
+    })
+  })
+
+  describe('readResource', () => {
+    const RESOURCE_URI = 'ui://demo/view.html'
+    const RESOURCE_HTML = '<html><body>Hello</body></html>'
+
+    it('reads resource content from server', async () => {
+      mockReadResource.mockResolvedValueOnce({
+        contents: [{ uri: RESOURCE_URI, text: RESOURCE_HTML }],
+      })
+
+      await service.connect(TestDefaults.MCP_URL)
+      const content = await service.readResource(RESOURCE_URI)
+
+      expect(mockReadResource).toHaveBeenCalledWith({ uri: RESOURCE_URI })
+      expect(content).toBe(RESOURCE_HTML)
+    })
+
+    it('throws when resource has no text content', async () => {
+      mockReadResource.mockResolvedValueOnce({ contents: [] })
+
+      await service.connect(TestDefaults.MCP_URL)
+
+      await expect(service.readResource(RESOURCE_URI)).rejects.toThrow(
+        `Resource not found: ${RESOURCE_URI}`,
+      )
+    })
+
+    it('throws when not connected', async () => {
+      await expect(service.readResource(RESOURCE_URI)).rejects.toThrow(NOT_CONNECTED_ERROR)
     })
   })
 
