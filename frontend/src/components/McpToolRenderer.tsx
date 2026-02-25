@@ -17,6 +17,27 @@ interface McpToolRendererProps {
  * Handles text content, and uses UIResourceRenderer from @mcp-ui/client
  * for MCP App HTML views with full protocol support.
  */
+/**
+ * Extracts the first valid JSON object from text content.
+ */
+function extractJson(text: string): Record<string, unknown> | null {
+  const start = text.indexOf('{')
+  if (start === -1) return null
+  let depth = 0
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === '{') depth++
+    else if (text[i] === '}') depth--
+    if (depth === 0) {
+      try {
+        return JSON.parse(text.slice(start, i + 1))
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
+
 export const McpToolRenderer: FunctionComponent<McpToolRendererProps> = ({
   content,
   isError = false,
@@ -26,13 +47,20 @@ export const McpToolRenderer: FunctionComponent<McpToolRendererProps> = ({
     return <div />
   }
 
+  // Collect JSON from text items to inject as initial render data for MCP App views
+  const textContent = content
+    .filter(item => item.type === 'text' && item.text)
+    .map(item => item.text!)
+    .join('\n')
+  const renderData = extractJson(textContent)
+
   return (
     <div
       className={`mcp-tool-result space-y-2 ${isError ? 'border-l-4 border-red-500 pl-2' : ''}`}
       data-error={isError || undefined}
     >
       {content.map((item, index) => (
-        <ToolContentItem key={index} item={item} onAction={onAction} />
+        <ToolContentItem key={index} item={item} renderData={renderData} onAction={onAction} />
       ))}
     </div>
   )
@@ -40,10 +68,11 @@ export const McpToolRenderer: FunctionComponent<McpToolRendererProps> = ({
 
 interface ToolContentItemProps {
   item: ContentItem
+  renderData?: Record<string, unknown> | null
   onAction?: (action: { type: string; payload?: unknown }) => void
 }
 
-const ToolContentItem: FunctionComponent<ToolContentItemProps> = ({ item }) => {
+const ToolContentItem: FunctionComponent<ToolContentItemProps> = ({ item, renderData }) => {
   const handleUIAction = useCallback(async (result: Record<string, unknown>) => {
     const method = result.method as string | undefined
     if (method === 'tools/call') {
@@ -70,6 +99,7 @@ const ToolContentItem: FunctionComponent<ToolContentItemProps> = ({ item }) => {
           resource={{ uri: item.uri, text: item.htmlContent, mimeType: 'text/html' }}
           onUIAction={handleUIAction}
           htmlProps={{
+            iframeRenderData: renderData ?? undefined,
             autoResizeIframe: true,
             style: { width: '100%', minHeight: '300px', border: 'none' },
           }}
