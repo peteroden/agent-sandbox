@@ -80,7 +80,7 @@ def build_tool_args(
     required = schema.get("required", [])
 
     if not properties:
-        return {"message": raw_args}
+        return {"message": raw_args} if raw_args else {}
 
     result: dict[str, Any] = {}
     numbers = parse_integers(raw_args)
