@@ -6,3 +6,7 @@ servers:
   - name: numbers
     url: ${MCP_NUMBERS_URL:-http://localhost:8002/mcp}
     enabled: true
+
+  - name: demo-app
+    url: ${MCP_DEMO_APP_URL:-http://localhost:8003/mcp}
+    enabled: true

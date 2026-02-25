@@ -50,12 +50,26 @@ const ToolContentItem: FunctionComponent<ToolContentItemProps> = ({ item }) => {
     )
   }
 
-  // Handle UI resources (future extension point for @mcp-ui/client)
+  // Handle HTML content from MCP App resources
+  if (item.htmlContent) {
+    return (
+      <div className="mcp-app-view rounded border border-gray-200 overflow-hidden">
+        <iframe
+          srcDoc={item.htmlContent}
+          sandbox="allow-scripts"
+          title="MCP App View"
+          className="w-full border-0"
+          style={{ minHeight: '300px' }}
+        />
+      </div>
+    )
+  }
+
+  // Handle UI resources without fetched content
   if (item.uri?.startsWith('ui://')) {
     return (
       <div className="bg-blue-50 p-2 rounded border border-blue-200">
         <span className="text-sm text-blue-700">UI Component: {item.uri}</span>
-        {/* Future: Use UIResourceRenderer from @mcp-ui/client here */}
       </div>
     )
   }
