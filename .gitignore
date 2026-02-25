@@ -46,6 +46,9 @@ e2e/test-results/
 e2e/playwright-report/
 e2e/blob-report/
 
+# Dev collector
+collector/.dev-collector.db*
+
 # Misc
 *.bak
 *.tmp

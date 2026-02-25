@@ -21,6 +21,11 @@ export default defineConfig({
   server: {
     host: true, // Listen on all interfaces for devcontainer access
     proxy: {
+      // Proxy OTLP query API for the observe dashboard (must be before /api)
+      '/api/observe': {
+        target: 'http://localhost:4318',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://0.0.0.0:8888',
         changeOrigin: true,
@@ -41,7 +46,7 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path: string) => path,
       },
-      // Proxy OTLP endpoints for browser telemetry (avoids CORS issues with SigNoz)
+      // Proxy OTLP endpoints for browser telemetry (avoids CORS issues)
       '/v1/traces': {
         target: 'http://localhost:4318',
         changeOrigin: true,

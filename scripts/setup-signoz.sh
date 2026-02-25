@@ -94,7 +94,7 @@ EOF
   cors_json=$(echo "$cors_origins" | sed 's/,/","/g; s/^/["/; s/$/"]/')
   local cfg="${SIGNOZ_DIR}/deploy/docker/otel-collector-config.yaml"
   [[ -f "$cfg" ]] && ! grep -q "cors:" "$cfg" && \
-    sed -i "s/      http:/      http:\n        cors:\n          allowed_origins: ${cors_json}\n          allowed_headers: [\"*\"]/" "$cfg"
+    sed -i "s|      http:|      http:\n        cors:\n          allowed_origins: ${cors_json}\n          allowed_headers: [\"*\"]|" "$cfg"
 
   log "Starting containers..."
   docker compose -f "$COMPOSE" up -d

@@ -19,6 +19,7 @@ RUN_BACKEND=true
 RUN_SIGNOZ=false
 SIGNOZ_STOP=false
 SIGNOZ_CREDS=false
+RUN_OBSERVE=false
 
 cleanup() {
   # Give child processes time to flush output
@@ -42,6 +43,7 @@ usage() {
   echo "  --signoz         Start SigNoz for tracing (auto-configured)"
   echo "  --signoz-stop    Stop SigNoz containers and exit"
   echo "  --signoz-creds   Show SigNoz login credentials"
+  echo "  --observe        Start lightweight OTLP dev collector (no Docker)"
   echo "  --help, -h       Show this help message"
   echo ""
   echo "Environment Variables:"
@@ -137,6 +139,10 @@ main() {
         SIGNOZ_CREDS=true
         shift
         ;;
+      --observe)
+        RUN_OBSERVE=true
+        shift
+        ;;
       --help|-h)
         usage
         ;;
@@ -178,6 +184,18 @@ main() {
     export OTEL_SERVICE_NAME="agent-sandbox-server"
   fi
 
+  # Start lightweight dev collector if requested
+  if [[ "${RUN_OBSERVE}" == "true" ]]; then
+    export VITE_OTEL_EXPORTER="otlp"
+    export VITE_OTEL_ENDPOINT=""
+    export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+    export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="http://localhost:4318/v1/traces"
+    export OTEL_EXPORTER_OTLP_LOGS_ENDPOINT="http://localhost:4318/v1/logs"
+    export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="http://localhost:4318/v1/metrics"
+    export ENABLE_INSTRUMENTATION=true
+    export OTEL_SERVICE_NAME="agent-sandbox-server"
+  fi
+
   # Build command array for concurrently
   local -a commands=()
   local -a names=()
@@ -205,6 +223,12 @@ main() {
     colors+=("green")
   fi
 
+  if [[ "${RUN_OBSERVE}" == "true" ]]; then
+    commands+=("cd ${ROOT_DIR} && uv run --project collector uvicorn dev_collector.server:app --host 0.0.0.0 --port 4318 --reload")
+    names+=("collector")
+    colors+=("yellow")
+  fi
+
   if [[ ${#commands[@]} -eq 0 ]]; then
     echo "No services to start (both backend and frontend disabled)" >&2
     exit 1
@@ -225,6 +249,9 @@ main() {
   echo "Starting services with LLM_PROVIDER=${LLM_PROVIDER}..."
   if [[ "${RUN_SIGNOZ}" == "true" ]]; then
     echo "SigNoz UI: http://localhost:8080"
+  fi
+  if [[ "${RUN_OBSERVE}" == "true" ]]; then
+    echo "Observe dashboard: http://localhost:5173/observe"
   fi
   echo ""
 

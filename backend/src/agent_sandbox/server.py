@@ -26,6 +26,18 @@ from agent_sandbox.registry.mcp_registry import MCPServerRegistry
 # Reads from environment: ENABLE_INSTRUMENTATION, OTEL_EXPORTER_OTLP_*_ENDPOINT
 configure_otel_providers()
 
+# Bridge Python logging to OTel so log records are exported with trace context
+if os.environ.get("ENABLE_INSTRUMENTATION", "").lower() == "true":
+    from opentelemetry._logs import get_logger_provider
+    from opentelemetry.sdk._logs import LoggingHandler
+
+    otel_handler = LoggingHandler(
+        level=logging.INFO,
+        logger_provider=get_logger_provider(),
+    )
+    logging.getLogger().addHandler(otel_handler)
+    logging.getLogger().setLevel(logging.INFO)
+
 # Set up logging
 logger = logging.getLogger(__name__)
 tracer = get_tracer()
@@ -44,7 +56,8 @@ CRITICAL RULES FOR TOOL RESULTS:
 - Do not rephrase, recompute, or restate tool results. The tool result is authoritative
 - If multiple tool result chunks arrive, return the first `text` value
 - If no tool result arrives, say you cannot produce an answer
-- If a tool was called, the ONLY valid final message is the tool result `text` (verbatim). No summaries, no reasoning, no extra words.
+- If a tool was called, the ONLY valid final message is the tool result `text`
+  (verbatim). No summaries, no reasoning, no extra words.
 - Do NOT perform math yourself when a math tool was called. Use the tool result only.
 
 DECISION PROCESS:
@@ -66,7 +79,8 @@ EXTRACT PARAMETERS:
 - Extract parameters from user input according to tool definitions
 
 RESPONSE FORMAT:
-- If a tool was called, your final reply MUST be exactly the tool's `text` content (no prefixes, no explanations). End the response immediately.
+- If a tool was called, your final reply MUST be exactly the tool's `text`
+  content (no prefixes, no explanations). End the response immediately.
 - After tool execution, state ONLY the numeric or text result from the tool call result
 - Do not explain which tool you used unless asked
 - Be concise
@@ -293,6 +307,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 # Create app with lifespan manager
 app = FastAPI(title="AG-UI Server", lifespan=lifespan)
+
+
+class RequestLoggingMiddleware:
+    """ASGI middleware that logs requests, including mounted sub-applications."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            method = scope.get("method", "?")
+            path = scope.get("path", "?")
+            logger.info("Request: %s %s", method, path)
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(RequestLoggingMiddleware)
 
 # Add CORS middleware FIRST (before instrumentation)
 # CORS must handle preflight OPTIONS requests before tracing kicks in

@@ -3,6 +3,7 @@ import { Home } from './pages/Home'
 import { Chat } from './pages/Chat'
 import { McpChat } from './pages/McpChat'
 import { Report } from './pages/Report'
+import { ObserveDashboard } from './pages/observe/ObserveDashboard'
 
 export function App() {
   return (
@@ -13,6 +14,7 @@ export function App() {
           <Link href="/chat" class="text-blue-600 hover:text-blue-800">Chat</Link>
           <Link href="/mcp-chat" class="text-blue-600 hover:text-blue-800">MCP Chat</Link>
           <Link href="/report" class="text-blue-600 hover:text-blue-800">Report</Link>
+          <Link href="/observe" class="text-blue-600 hover:text-blue-800">Observe</Link>
         </div>
       </nav>
       <main class="py-6">
@@ -21,6 +23,8 @@ export function App() {
           <Route path="/chat" component={Chat} />
           <Route path="/mcp-chat" component={McpChat} />
           <Route path="/report" component={Report} />
+          <Route path="/observe" component={ObserveDashboard} />
+          <Route path="/observe/:rest*" component={ObserveDashboard} />
           <Route>404: Not Found</Route>
         </Switch>
       </main>
