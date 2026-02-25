@@ -2,6 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor } from '@testing-library/preact'
 import { McpAppDemo } from '../../src/pages/McpAppDemo'
 
+// Mock UIResourceRenderer
+vi.mock('@mcp-ui/client', () => ({
+  UIResourceRenderer: (props: Record<string, unknown>) => {
+    const resource = props.resource as Record<string, string>
+    return (
+      <div data-testid="ui-resource-renderer" data-uri={resource?.uri}>
+        {resource?.text}
+      </div>
+    )
+  },
+}))
+
 const TOOL_NAME = 'system_stats'
 const TOOL_DESCRIPTION = 'Get system stats'
 const RESOURCE_URI = 'ui://demo-app/view.html'
@@ -93,9 +105,9 @@ describe('McpAppDemo', () => {
       expect(fetch).toHaveBeenCalledWith(
         `/api/mcp-resource?uri=${encodeURIComponent(RESOURCE_URI)}`,
       )
-      const iframe = container.querySelector('iframe')
-      expect(iframe).not.toBeNull()
-      expect(iframe?.getAttribute('srcdoc')).toBe(RESOURCE_HTML)
+      const renderer = container.querySelector('[data-testid="ui-resource-renderer"]')
+      expect(renderer).not.toBeNull()
+      expect(renderer?.getAttribute('data-uri')).toBe(RESOURCE_URI)
     })
   })
 

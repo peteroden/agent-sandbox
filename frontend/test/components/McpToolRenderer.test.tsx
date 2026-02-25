@@ -1,6 +1,23 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render } from '@testing-library/preact'
 import { McpToolRenderer } from '../../src/components/McpToolRenderer'
+
+// Mock UIResourceRenderer since it's a React component from @mcp-ui/client
+vi.mock('@mcp-ui/client', () => ({
+  UIResourceRenderer: (props: Record<string, unknown>) => {
+    const resource = props.resource as Record<string, string>
+    return (
+      <div data-testid="ui-resource-renderer" data-uri={resource?.uri}>
+        {resource?.text}
+      </div>
+    )
+  },
+}))
+
+// Mock mcpClient
+vi.mock('../../src/services/mcpClient', () => ({
+  mcpClient: { callTool: vi.fn() },
+}))
 
 // Test constants
 const TEXT_CONTENT = 'Tool output text'
@@ -65,25 +82,16 @@ describe('McpToolRenderer', () => {
 
   describe('MCP App HTML content', () => {
     const HTML_CONTENT = '<html><body><h1>Stats Dashboard</h1></body></html>'
+    const RESOURCE_URI = 'ui://demo-app/view.html'
 
-    it('renders htmlContent in sandboxed iframe', () => {
-      const content = [{ type: 'resource', htmlContent: HTML_CONTENT }]
-
-      const { container } = render(<McpToolRenderer content={content} />)
-
-      const iframe = container.querySelector('iframe')
-      expect(iframe).not.toBeNull()
-      expect(iframe?.getAttribute('srcdoc')).toBe(HTML_CONTENT)
-      expect(iframe?.getAttribute('sandbox')).toBe('allow-scripts')
-    })
-
-    it('sets title on iframe for accessibility', () => {
-      const content = [{ type: 'resource', htmlContent: HTML_CONTENT }]
+    it('renders UIResourceRenderer for htmlContent with uri', () => {
+      const content = [{ type: 'resource', uri: RESOURCE_URI, htmlContent: HTML_CONTENT }]
 
       const { container } = render(<McpToolRenderer content={content} />)
 
-      const iframe = container.querySelector('iframe')
-      expect(iframe?.getAttribute('title')).toBe('MCP App View')
+      const renderer = container.querySelector('[data-testid="ui-resource-renderer"]')
+      expect(renderer).not.toBeNull()
+      expect(renderer?.getAttribute('data-uri')).toBe(RESOURCE_URI)
     })
 
     it('renders ui:// fallback label when no htmlContent', () => {
@@ -92,7 +100,6 @@ describe('McpToolRenderer', () => {
       const { container } = render(<McpToolRenderer content={content} />)
 
       expect(container.textContent).toContain('UI Component: ui://demo/view.html')
-      expect(container.querySelector('iframe')).toBeNull()
     })
   })
 

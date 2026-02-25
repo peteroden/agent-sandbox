@@ -1,5 +1,7 @@
 import type { FunctionComponent } from 'preact'
-import type { ContentItem } from '../services/mcpClient'
+import { useCallback } from 'preact/hooks'
+import { UIResourceRenderer } from '@mcp-ui/client'
+import { mcpClient, type ContentItem } from '../services/mcpClient'
 
 interface McpToolRendererProps {
   /** The content items to render */
@@ -12,7 +14,8 @@ interface McpToolRendererProps {
 
 /**
  * Renders MCP tool call results.
- * Handles text content, and provides extension points for UI resources.
+ * Handles text content, and uses UIResourceRenderer from @mcp-ui/client
+ * for MCP App HTML views with full protocol support.
  */
 export const McpToolRenderer: FunctionComponent<McpToolRendererProps> = ({
   content,
@@ -41,6 +44,15 @@ interface ToolContentItemProps {
 }
 
 const ToolContentItem: FunctionComponent<ToolContentItemProps> = ({ item }) => {
+  const handleUIAction = useCallback(async (result: Record<string, unknown>) => {
+    const method = result.method as string | undefined
+    if (method === 'tools/call') {
+      const params = result.params as { name: string; arguments?: Record<string, unknown> }
+      const toolResult = await mcpClient.callTool(params.name, params.arguments ?? {})
+      return { content: toolResult }
+    }
+  }, [])
+
   // Handle text content
   if (item.type === 'text' && item.text) {
     return (
@@ -50,16 +62,17 @@ const ToolContentItem: FunctionComponent<ToolContentItemProps> = ({ item }) => {
     )
   }
 
-  // Handle HTML content from MCP App resources
-  if (item.htmlContent) {
+  // Handle MCP App HTML views via UIResourceRenderer
+  if (item.htmlContent && item.uri) {
     return (
       <div className="mcp-app-view rounded border border-gray-200 overflow-hidden">
-        <iframe
-          srcDoc={item.htmlContent}
-          sandbox="allow-scripts"
-          title="MCP App View"
-          className="w-full border-0"
-          style={{ minHeight: '300px' }}
+        <UIResourceRenderer
+          resource={{ uri: item.uri, text: item.htmlContent, mimeType: 'text/html' }}
+          onUIAction={handleUIAction}
+          htmlProps={{
+            autoResizeIframe: true,
+            style: { width: '100%', minHeight: '300px', border: 'none' },
+          }}
         />
       </div>
     )
