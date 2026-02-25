@@ -166,7 +166,6 @@ export function ObserveDashboard() {
                 setSelectedSpan(null)
                 observe.updateFilters({ spanId: null })
               }}
-              onViewLogs={() => observe.updateFilters({ spanId: selectedSpan.span_id })}
             />
           </div>
         )}

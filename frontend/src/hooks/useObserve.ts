@@ -203,7 +203,9 @@ export function useObserve() {
 
   const updateFilters = useCallback((updates: Partial<ObserveFilters>) => {
     setFilters((prev) => ({ ...prev, ...updates }))
-    setSelectedTrace(null)
+    if ('traceId' in updates && updates.traceId === null) {
+      setSelectedTrace(null)
+    }
   }, [])
 
   // Auto-refresh polling

@@ -316,6 +316,26 @@ class Storage:
         rows = await cursor.fetchall()
         return [self._log_row_to_dict(row) for row in rows]
 
+    async def _get_descendant_span_ids(
+        self, span_id: str, trace_id: str | None = None,
+    ) -> list[str]:
+        """Return span_id and all descendant span_ids using recursive walk."""
+        trace_condition = "AND trace_id = ?" if trace_id else ""
+        trace_params = (trace_id,) if trace_id else ()
+        cursor = await self.db.execute(
+            f"""WITH RECURSIVE descendants(sid) AS (
+                    VALUES(?)
+                    UNION ALL
+                    SELECT s.span_id FROM spans s
+                    JOIN descendants d ON s.parent_span_id = d.sid
+                    {trace_condition}
+                )
+                SELECT sid FROM descendants""",  # noqa: S608
+            (span_id, *trace_params),
+        )
+        rows = await cursor.fetchall()
+        return [row[0] for row in rows]
+
     async def get_logs(
         self,
         service: str | None = None,
@@ -338,8 +358,13 @@ class Storage:
             conditions.append("trace_id = ?")
             params.append(trace_id)
         if span_id:
-            conditions.append("span_id = ?")
-            params.append(span_id)
+            # Include logs from the selected span and all descendant spans
+            descendant_ids = await self._get_descendant_span_ids(
+                span_id, trace_id
+            )
+            placeholders = ",".join("?" * len(descendant_ids))
+            conditions.append(f"span_id IN ({placeholders})")  # noqa: S608
+            params.extend(descendant_ids)
         if since_ns is not None:
             conditions.append("timestamp_unix_nano >= ?")
             params.append(since_ns)

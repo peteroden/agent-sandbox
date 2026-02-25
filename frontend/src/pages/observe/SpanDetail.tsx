@@ -7,7 +7,6 @@ import type { SpanRecord } from '../../hooks/useObserve'
 interface SpanDetailProps {
   span: SpanRecord
   onClose: () => void
-  onViewLogs: () => void
 }
 
 function formatTimestamp(nanos: number): string {
@@ -35,7 +34,7 @@ const STATUS_NAMES: Record<number, string> = {
   2: 'Error',
 }
 
-export function SpanDetail({ span, onClose, onViewLogs }: SpanDetailProps) {
+export function SpanDetail({ span, onClose }: SpanDetailProps) {
   const attributes = Object.entries(span.attributes)
 
   return (
@@ -113,15 +112,6 @@ export function SpanDetail({ span, onClose, onViewLogs }: SpanDetailProps) {
           </div>
         </div>
       )}
-
-      <div class="mt-4 flex gap-2">
-        <button
-          class="text-sm text-blue-600 hover:text-blue-800"
-          onClick={onViewLogs}
-        >
-          View Logs for Span
-        </button>
-      </div>
     </div>
   )
 }

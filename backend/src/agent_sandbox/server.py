@@ -26,6 +26,18 @@ from agent_sandbox.registry.mcp_registry import MCPServerRegistry
 # Reads from environment: ENABLE_INSTRUMENTATION, OTEL_EXPORTER_OTLP_*_ENDPOINT
 configure_otel_providers()
 
+# Bridge Python logging to OTel so log records are exported with trace context
+if os.environ.get("ENABLE_INSTRUMENTATION", "").lower() == "true":
+    from opentelemetry._logs import get_logger_provider
+    from opentelemetry.sdk._logs import LoggingHandler
+
+    otel_handler = LoggingHandler(
+        level=logging.INFO,
+        logger_provider=get_logger_provider(),
+    )
+    logging.getLogger().addHandler(otel_handler)
+    logging.getLogger().setLevel(logging.INFO)
+
 # Set up logging
 logger = logging.getLogger(__name__)
 tracer = get_tracer()
@@ -293,6 +305,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 # Create app with lifespan manager
 app = FastAPI(title="AG-UI Server", lifespan=lifespan)
+
+
+class RequestLoggingMiddleware:
+    """ASGI middleware that logs requests, including mounted sub-applications."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            method = scope.get("method", "?")
+            path = scope.get("path", "?")
+            logger.info("Request: %s %s", method, path)
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(RequestLoggingMiddleware)
 
 # Add CORS middleware FIRST (before instrumentation)
 # CORS must handle preflight OPTIONS requests before tracing kicks in
