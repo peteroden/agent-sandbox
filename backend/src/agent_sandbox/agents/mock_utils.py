@@ -116,7 +116,9 @@ def extract_tool_text(tool_message: Any) -> str:
         if getattr(content, "type", None) != "function_result":
             continue
         return _normalize_result(content.result)
-    return ""
+    # Fall back to message text when no function_result content
+    text = getattr(tool_message, "text", None)
+    return text if text else ""
 
 
 def _normalize_result(result: Any) -> str:

@@ -26,6 +26,11 @@ export default defineConfig({
         target: 'http://localhost:4318',
         changeOrigin: true,
       },
+      // Proxy MCP resource endpoint (must be before /api)
+      '/api/mcp-resource': {
+        target: 'http://0.0.0.0:8888',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://0.0.0.0:8888',
         changeOrigin: true,
