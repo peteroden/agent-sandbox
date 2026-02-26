@@ -78,6 +78,10 @@ class TestDetectToolRequest:
              TEST_TOOL_NAME_ADD], None, "use unknown_tool arg"),
             ("some text before use add_numbers 5 3", [
              TEST_TOOL_NAME_ADD], TEST_TOOL_NAME_ADD, "5 3"),
+            ("use echo hello world", [
+             TEST_TOOL_NAME_ECHO], TEST_TOOL_NAME_ECHO, "hello world"),
+            ("use add 5 3", [
+             TEST_TOOL_NAME_ADD], TEST_TOOL_NAME_ADD, "5 3"),
         ],
         ids=[
             "add_tool",
@@ -87,6 +91,8 @@ class TestDetectToolRequest:
             "case_insensitive",
             "unknown_tool",
             "tool_mid_sentence",
+            "echo_alias",
+            "add_alias",
         ],
     )
     def test_detect_tool_request(

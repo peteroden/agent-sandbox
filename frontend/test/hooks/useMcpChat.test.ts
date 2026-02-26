@@ -101,7 +101,7 @@ describe('useMcpChat', () => {
       expect(result.current.messages).toContainEqual(
         expect.objectContaining({
           role: 'assistant',
-          content: 'Tool output',
+          content: '',
           toolResult,
         })
       )
@@ -210,7 +210,11 @@ describe('useMcpChat', () => {
 
       await act(() => result.current.callTool(TOOL_NAME, {}))
 
-      expect(result.current.messages[0].content).toContain(VIEW_URI)
+      // Text content is in toolResult, not message.content (no duplication)
+      const textItem = result.current.messages[0].toolResult?.find(
+        i => i.type === 'text',
+      )
+      expect(textItem?.text).toContain(VIEW_URI)
       const resourceItem = result.current.messages[0].toolResult?.find(
         i => i.htmlContent,
       )

@@ -88,10 +88,13 @@ class TestViewResource:
         html = view()
         assert html.startswith("<!DOCTYPE html>")
 
-    def test_html_contains_ext_apps_sdk(self) -> None:
-        """View should import the MCP Apps SDK."""
+    def test_html_uses_ext_apps_sdk(self) -> None:
+        """View should import App from @modelcontextprotocol/ext-apps."""
         html = view()
         assert "@modelcontextprotocol/ext-apps" in html
+        assert "app.callServerTool" in html
+        assert "app.ontoolresult" in html
+        assert "app.connect()" in html
 
     def test_html_contains_gauge_elements(self) -> None:
         """View should contain gauge UI elements."""

@@ -49,7 +49,8 @@ export default defineConfig({
       '^/mcp(/|$)': {
         target: 'http://0.0.0.0:8888',
         changeOrigin: true,
-        rewrite: (path: string) => path,
+        // Ensure trailing slash to avoid 307 redirect from uvicorn
+        rewrite: (path: string) => path.endsWith('/') || path.includes('?') ? path : path + '/',
       },
       // Proxy OTLP endpoints for browser telemetry (avoids CORS issues)
       '/v1/traces': {

@@ -296,8 +296,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         add_agent_framework_fastapi_endpoint(app, agent, "/ag-ui")
         logger.info("Mounted AG-UI endpoint at /ag-ui")
 
-        # Create and mount MCP server at /mcp
-        mcp_server = agent.as_mcp_server(server_name="agent-sandbox")
+        # Create and mount MCP gateway server at /mcp
+        from agent_sandbox.mcp_gateway import create_gateway_server
+
+        mcp_server = create_gateway_server(
+            agent, mcp_tools or [], server_name="agent-sandbox"
+        )
         mcp_asgi, session_manager = create_mcp_asgi(
             mcp_server, stateless=True
         )

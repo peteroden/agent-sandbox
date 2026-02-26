@@ -109,8 +109,10 @@ export function useMcpChat(): UseMcpChatReturn {
         }
       }
       
-      // Add assistant response as message
-      addMessage('assistant', textContent || 'No response', result)
+      // Add assistant response — use text summary as content, but skip it
+      // when tool result is available (McpToolRenderer handles display)
+      const displayText = result.length > 0 ? '' : textContent || 'No response'
+      addMessage('assistant', displayText, result)
     } catch (err) {
       const toolError = err instanceof Error ? err : new Error(String(err))
       logger.error('MCP tool failed', { 'tool.name': name, 'error.message': toolError.message })

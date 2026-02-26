@@ -39,26 +39,23 @@ def echo_text(message: str) -> str:
     DO NOT USE for math operations. Use ONLY for echoing/repeating/saying text.
 
     Input: A text string message
-    Output: The message prefixed with 'Echo: '
+    Output: The same message returned as-is
 
     Examples:
-    - "echo hello" -> echo_text(message="hello") -> "Echo: hello"
-    - "repeat goodbye" -> echo_text(message="goodbye") -> "Echo: goodbye"
-    - "say hi there" -> echo_text(message="hi there") -> "Echo: hi there"
+    - "echo hello" -> echo_text(message="hello") -> "hello"
+    - "repeat goodbye" -> echo_text(message="goodbye") -> "goodbye"
+    - "say hi there" -> echo_text(message="hi there") -> "hi there"
 
     Args:
         message: The text message to echo back.
 
     Returns:
-        The message prefixed with 'Echo: '.
+        The message as-is.
     """
     logger.info("Echoing message: %s", message)
-    # Nested span to verify trace context propagation is working
     with tracer.start_as_current_span("tool.echo_text.process") as process_span:
-        result = f"Echo: {message}"
-        logger.info("Echo result: %s", result)
-        process_span.set_attribute("result", result)
-    return result
+        process_span.set_attribute("result", message)
+    return message
 
 
 if __name__ == "__main__":

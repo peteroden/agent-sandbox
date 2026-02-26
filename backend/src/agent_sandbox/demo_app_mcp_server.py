@@ -229,47 +229,35 @@ EMBEDDED_VIEW_HTML = """<!DOCTYPE html>
       el('status').textContent =
         'Updated ' + new Date().toLocaleTimeString();
     }
-
-    // Listen for initial render data from UIResourceRenderer host
-    window.addEventListener('message', function(event) {
-      var data = event.data;
-      if (data && data.type === 'ui-lifecycle-iframe-render-data'
-          && data.payload && data.payload.renderData) {
-        update(data.payload.renderData);
-      }
-    });
   </script>
   <script type="module">
-    import { App } from "https://unpkg.com/@modelcontextprotocol/ext-apps@1.0.1/app-with-deps";
+    import { App } from "https://esm.sh/@modelcontextprotocol/ext-apps@1.1.2/app-with-deps";
 
-    const app = new App({
-      name: "System Stats View", version: "1.0.0"
-    });
+    const app = new App({ name: "System Stats", version: "1.0.0" });
 
     app.ontoolresult = (result) => {
-      const text = result.content
-        ?.find(c => c.type === 'text')?.text;
-      if (text) {
-        try { update(JSON.parse(text)); }
-        catch(e) { console.error('Parse error', e); }
+      if (result.structuredContent) {
+        update(result.structuredContent);
+      } else if (result.content) {
+        const textItem = result.content.find(c => c.type === 'text');
+        if (textItem && textItem.text) {
+          try { update(JSON.parse(textItem.text)); } catch(e) { /* ignore */ }
+        }
       }
     };
 
     const btn = document.getElementById('refresh-btn');
     btn.addEventListener('click', async () => {
       btn.disabled = true;
-      document.getElementById('status').textContent =
-        'Refreshing...';
+      document.getElementById('status').textContent = 'Refreshing...';
       try {
-        const result = await app.callServerTool(
-          { name: 'system_stats', arguments: {} }
-        );
-        const text = result.content
-          ?.find(c => c.type === 'text')?.text;
-        if (text) update(JSON.parse(text));
+        const result = await app.callServerTool({ name: 'system_stats', arguments: {} });
+        if (result.content) {
+          const textItem = result.content.find(c => c.type === 'text');
+          if (textItem && textItem.text) update(JSON.parse(textItem.text));
+        }
       } catch(e) {
-        document.getElementById('status').textContent =
-          'Error: ' + e.message;
+        document.getElementById('status').textContent = 'Error: ' + e.message;
       }
       btn.disabled = false;
     });
@@ -283,7 +271,7 @@ EMBEDDED_VIEW_HTML = """<!DOCTYPE html>
 @mcp.resource(
     VIEW_URI,
     mime_type="text/html;profile=mcp-app",
-    meta={"ui": {"csp": {"resourceDomains": ["https://unpkg.com"]}}},
+    meta={"ui": {"csp": {"resourceDomains": ["https://esm.sh"]}}},
 )
 def view() -> str:
     """HTML view resource for the system stats dashboard."""

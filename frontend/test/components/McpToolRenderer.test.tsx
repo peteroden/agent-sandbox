@@ -2,13 +2,12 @@ import { describe, it, expect, vi } from 'vitest'
 import { render } from '@testing-library/preact'
 import { McpToolRenderer } from '../../src/components/McpToolRenderer'
 
-// Mock UIResourceRenderer since it's a React component from @mcp-ui/client
-vi.mock('@mcp-ui/client', () => ({
-  UIResourceRenderer: (props: Record<string, unknown>) => {
-    const resource = props.resource as Record<string, string>
+// Mock McpAppHost since it wraps ext-apps AppBridge internals
+vi.mock('../../src/components/McpAppHost', () => ({
+  McpAppHost: (props: Record<string, unknown>) => {
     return (
-      <div data-testid="ui-resource-renderer" data-uri={resource?.uri}>
-        {resource?.text}
+      <div data-testid="mcp-app-host" data-uri={props.uri as string}>
+        {props.htmlContent as string}
       </div>
     )
   },
@@ -84,14 +83,14 @@ describe('McpToolRenderer', () => {
     const HTML_CONTENT = '<html><body><h1>Stats Dashboard</h1></body></html>'
     const RESOURCE_URI = 'ui://demo-app/view.html'
 
-    it('renders UIResourceRenderer for htmlContent with uri', () => {
+    it('renders McpAppHost for htmlContent with uri', () => {
       const content = [{ type: 'resource', uri: RESOURCE_URI, htmlContent: HTML_CONTENT }]
 
       const { container } = render(<McpToolRenderer content={content} />)
 
-      const renderer = container.querySelector('[data-testid="ui-resource-renderer"]')
-      expect(renderer).not.toBeNull()
-      expect(renderer?.getAttribute('data-uri')).toBe(RESOURCE_URI)
+      const host = container.querySelector('[data-testid="mcp-app-host"]')
+      expect(host).not.toBeNull()
+      expect(host?.getAttribute('data-uri')).toBe(RESOURCE_URI)
     })
 
     it('renders ui:// fallback label when no htmlContent', () => {

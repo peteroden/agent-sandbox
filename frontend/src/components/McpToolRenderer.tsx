@@ -1,7 +1,6 @@
 import type { FunctionComponent } from 'preact'
-import { useCallback } from 'preact/hooks'
-import { UIResourceRenderer } from '@mcp-ui/client'
-import { mcpClient, type ContentItem } from '../services/mcpClient'
+import { McpAppHost } from './McpAppHost'
+import type { ContentItem } from '../services/mcpClient'
 
 interface McpToolRendererProps {
   /** The content items to render */
@@ -14,8 +13,8 @@ interface McpToolRendererProps {
 
 /**
  * Renders MCP tool call results.
- * Handles text content, and uses UIResourceRenderer from @mcp-ui/client
- * for MCP App HTML views with full protocol support.
+ * Handles text content, and uses McpAppHost with the ext-apps AppBridge
+ * protocol for MCP App HTML views.
  */
 /**
  * Extracts the first valid JSON object from text content.
@@ -54,12 +53,18 @@ export const McpToolRenderer: FunctionComponent<McpToolRendererProps> = ({
     .join('\n')
   const renderData = extractJson(textContent)
 
+  // When an HTML view is present, suppress text items — they're just data for the view
+  const hasHtmlView = content.some(item => item.htmlContent && item.uri)
+  const visibleContent = hasHtmlView
+    ? content.filter(item => !(item.type === 'text' && item.text))
+    : content
+
   return (
     <div
       className={`mcp-tool-result space-y-2 ${isError ? 'border-l-4 border-red-500 pl-2' : ''}`}
       data-error={isError || undefined}
     >
-      {content.map((item, index) => (
+      {visibleContent.map((item, index) => (
         <ToolContentItem key={index} item={item} renderData={renderData} onAction={onAction} />
       ))}
     </div>
@@ -73,15 +78,6 @@ interface ToolContentItemProps {
 }
 
 const ToolContentItem: FunctionComponent<ToolContentItemProps> = ({ item, renderData }) => {
-  const handleUIAction = useCallback(async (result: Record<string, unknown>) => {
-    const method = result.method as string | undefined
-    if (method === 'tools/call') {
-      const params = result.params as { name: string; arguments?: Record<string, unknown> }
-      const toolResult = await mcpClient.callTool(params.name, params.arguments ?? {})
-      return { content: toolResult }
-    }
-  }, [])
-
   // Handle text content
   if (item.type === 'text' && item.text) {
     return (
@@ -91,18 +87,14 @@ const ToolContentItem: FunctionComponent<ToolContentItemProps> = ({ item, render
     )
   }
 
-  // Handle MCP App HTML views via UIResourceRenderer
+  // Handle MCP App HTML views via ext-apps AppBridge protocol
   if (item.htmlContent && item.uri) {
     return (
       <div className="mcp-app-view rounded border border-gray-200 overflow-hidden">
-        <UIResourceRenderer
-          resource={{ uri: item.uri, text: item.htmlContent, mimeType: 'text/html' }}
-          onUIAction={handleUIAction}
-          htmlProps={{
-            iframeRenderData: renderData ?? undefined,
-            autoResizeIframe: true,
-            style: { width: '100%', minHeight: '300px', border: 'none' },
-          }}
+        <McpAppHost
+          htmlContent={item.htmlContent}
+          uri={item.uri}
+          initialData={renderData}
         />
       </div>
     )

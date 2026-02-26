@@ -2,13 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor } from '@testing-library/preact'
 import { McpAppDemo } from '../../src/pages/McpAppDemo'
 
-// Mock UIResourceRenderer
-vi.mock('@mcp-ui/client', () => ({
-  UIResourceRenderer: (props: Record<string, unknown>) => {
-    const resource = props.resource as Record<string, string>
+// Mock McpAppHost
+vi.mock('../../src/components/McpAppHost', () => ({
+  McpAppHost: (props: Record<string, unknown>) => {
     return (
-      <div data-testid="ui-resource-renderer" data-uri={resource?.uri}>
-        {resource?.text}
+      <div data-testid="mcp-app-host" data-uri={props.uri as string}>
+        {props.htmlContent as string}
       </div>
     )
   },
@@ -105,9 +104,9 @@ describe('McpAppDemo', () => {
       expect(fetch).toHaveBeenCalledWith(
         `/api/mcp-resource?uri=${encodeURIComponent(RESOURCE_URI)}`,
       )
-      const renderer = container.querySelector('[data-testid="ui-resource-renderer"]')
-      expect(renderer).not.toBeNull()
-      expect(renderer?.getAttribute('data-uri')).toBe(RESOURCE_URI)
+      const host = container.querySelector('[data-testid="mcp-app-host"]')
+      expect(host).not.toBeNull()
+      expect(host?.getAttribute('data-uri')).toBe(RESOURCE_URI)
     })
   })
 
