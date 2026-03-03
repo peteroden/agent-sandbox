@@ -2,6 +2,29 @@ import { useState, useCallback } from 'preact/hooks'
 import { mcpClient, type ContentItem } from '../services/mcpClient'
 import { logger, withSpan } from '@agent-sandbox/otel-web-sdk'
 
+const UI_URI_PATTERN = /ui:\/\/[^\s"'}\]]+/g
+
+/**
+ * Extracts ui:// URIs from text content, used to detect MCP App views
+ * referenced in tool responses.
+ */
+export function extractViewUris(text: string): string[] {
+  return [...new Set(text.match(UI_URI_PATTERN) ?? [])]
+}
+
+/**
+ * Fetches MCP App HTML from the backend resource proxy.
+ */
+async function fetchResourceHtml(uri: string): Promise<string> {
+  const response = await fetch(
+    `/api/mcp-resource?uri=${encodeURIComponent(uri)}`,
+  )
+  if (!response.ok) {
+    throw new Error(`Failed to fetch resource: ${response.statusText}`)
+  }
+  return response.text()
+}
+
 /**
  * Message in the MCP chat conversation
  */
@@ -30,6 +53,10 @@ export interface UseMcpChatReturn {
 /**
  * Hook for managing MCP chat conversation state.
  * Provides message history and tool invocation capabilities.
+ *
+ * When a tool response contains ui:// URIs (MCP App views), the hook
+ * automatically fetches the HTML from the backend resource proxy
+ * and appends it as renderable content.
  */
 export function useMcpChat(): UseMcpChatReturn {
   const [messages, setMessages] = useState<McpMessage[]>([])
@@ -70,9 +97,22 @@ export function useMcpChat(): UseMcpChatReturn {
         .filter(item => item.type === 'text' && item.text)
         .map(item => item.text)
         .join('\n')
+
+      // Detect ui:// URIs in text and fetch HTML views
+      const viewUris = extractViewUris(textContent)
+      for (const uri of viewUris) {
+        try {
+          const html = await fetchResourceHtml(uri)
+          result.push({ type: 'resource', uri, htmlContent: html })
+        } catch (e) {
+          logger.error('Failed to fetch MCP App view', { uri, error: String(e) })
+        }
+      }
       
-      // Add assistant response as message
-      addMessage('assistant', textContent || 'No response', result)
+      // Add assistant response — use text summary as content, but skip it
+      // when tool result is available (McpToolRenderer handles display)
+      const displayText = result.length > 0 ? '' : textContent || 'No response'
+      addMessage('assistant', displayText, result)
     } catch (err) {
       const toolError = err instanceof Error ? err : new Error(String(err))
       logger.error('MCP tool failed', { 'tool.name': name, 'error.message': toolError.message })

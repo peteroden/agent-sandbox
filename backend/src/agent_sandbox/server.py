@@ -6,12 +6,14 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from agent_framework import Agent, MCPStreamableHTTPTool
 from agent_framework.observability import configure_otel_providers, get_tracer
 from agent_framework_ag_ui import add_agent_framework_fastapi_endpoint
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from mcp.server.fastmcp.server import StreamableHTTPASGIApp
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
@@ -285,14 +287,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             startup_span.record_exception(e)
             mcp_tools = []
 
+        # Store connected tools for resource proxy endpoint
+        app.state.mcp_tools = mcp_tools
+
         agent = create_agent(mcp_tools=mcp_tools or None)
 
         # Mount AG-UI at /ag-ui (moved from /)
         add_agent_framework_fastapi_endpoint(app, agent, "/ag-ui")
         logger.info("Mounted AG-UI endpoint at /ag-ui")
 
-        # Create and mount MCP server at /mcp
-        mcp_server = agent.as_mcp_server(server_name="agent-sandbox")
+        # Create and mount MCP gateway server at /mcp
+        from agent_sandbox.mcp_gateway import create_gateway_server
+
+        mcp_server = create_gateway_server(
+            agent, mcp_tools or [], server_name="agent-sandbox"
+        )
         mcp_asgi, session_manager = create_mcp_asgi(
             mcp_server, stateless=True
         )
@@ -347,6 +356,52 @@ if os.environ.get("ENABLE_INSTRUMENTATION", "").lower() == "true":
 async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+@app.get("/api/mcp-resource")
+async def read_mcp_resource(
+    uri: str = Query(..., description="Resource URI (e.g. ui://server/path)"),
+) -> HTMLResponse:
+    """Proxy resource reads to child MCP servers.
+
+    Parses ui:// URIs to find the target server's MCPStreamableHTTPTool
+    and reads the resource via its existing session.
+    """
+    parsed = urlparse(uri)
+    if parsed.scheme != "ui":
+        return HTMLResponse(
+            content="Only ui:// URIs are supported", status_code=400
+        )
+
+    server_name = parsed.netloc
+    mcp_tools: list[MCPStreamableHTTPTool] = getattr(
+        app.state, "mcp_tools", []
+    )
+    tool = next(
+        (t for t in mcp_tools if t.name == f"{server_name}-tools"),
+        None,
+    )
+    if not tool or not tool.session:
+        return HTMLResponse(
+            content=f"MCP server not connected: {server_name}",
+            status_code=404,
+        )
+
+    try:
+        result = await tool.session.read_resource(uri=uri)
+        content = result.contents[0]
+        if hasattr(content, "text"):
+            return HTMLResponse(content=content.text)
+        return HTMLResponse(
+            content="Resource has no text content",
+            status_code=404,
+        )
+    except Exception as e:
+        logger.error("Failed to read resource %s: %s", uri, e)
+        return HTMLResponse(
+            content=f"Failed to read resource: {e}",
+            status_code=502,
+        )
 
 
 if __name__ == "__main__":

@@ -50,7 +50,7 @@ export const McpChat: FunctionComponent = () => {
   }
 
   return (
-    <div className="flex flex-col h-screen max-w-3xl mx-auto p-4">
+    <div className="flex flex-col h-[calc(100vh-6rem)] max-w-3xl mx-auto p-4">
       {/* Header */}
       <div className="mb-4 p-4 bg-white rounded-lg shadow">
         <div className="flex items-center justify-between">
@@ -153,11 +153,13 @@ const MessageBubble: FunctionComponent<MessageBubbleProps> = ({ message }) => {
             : 'bg-gray-100 text-gray-800'
         }`}
       >
-        <div className={isUser ? 'text-white' : 'text-gray-800'}>
-          {message.content}
-        </div>
+        {message.content && (
+          <div className={isUser ? 'text-white' : 'text-gray-800'}>
+            {message.content}
+          </div>
+        )}
         {message.toolResult && message.toolResult.length > 0 && (
-          <div className="mt-2 pt-2 border-t border-gray-200">
+          <div className={message.content ? 'mt-2 pt-2 border-t border-gray-200' : ''}>
             <McpToolRenderer content={message.toolResult} />
           </div>
         )}

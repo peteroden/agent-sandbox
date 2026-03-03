@@ -125,14 +125,11 @@ class MockChatClient(FunctionInvocationLayer, BaseChatClient):
         **kwargs: Any,
     ) -> ChatResponse:
         """Aggregate streaming output into a single response."""
-        texts: list[str] = []
         contents: list[Content] = []
 
         async for update in self._generate_updates(
             messages=messages, options=options, **kwargs
         ):
-            if update.text:
-                texts.append(update.text)
             if update.contents:
                 contents.extend(update.contents)
 
@@ -140,7 +137,6 @@ class MockChatClient(FunctionInvocationLayer, BaseChatClient):
             messages=[
                 Message(
                     role="assistant",
-                    text="".join(texts) or f"{self.MOCK_PREFIX}No response",
                     contents=contents or None,
                 )
             ],

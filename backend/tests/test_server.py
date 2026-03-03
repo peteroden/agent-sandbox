@@ -279,7 +279,7 @@ class TestCreateMCPTools:
 
                 tools = await create_mcp_tools()
 
-        assert len(tools) == 1  # Only one server connected
+        assert len(tools) == 2  # Text fails, numbers and demo-app succeed
 
     async def test_create_mcp_tools_returns_empty_when_all_fail(
         self, clear_server_module_cache: None

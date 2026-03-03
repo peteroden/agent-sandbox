@@ -15,18 +15,34 @@ def parse_integers(text: str) -> list[int]:
     return [int(n) for n in re.findall(r"-?\d+", text)]
 
 
+TOOL_ALIASES: dict[str, str] = {
+    "echo": "echo_text",
+    "add": "add_numbers",
+}
+
+
 def detect_tool_request(
     message: str, tool_names: list[str]
 ) -> tuple[str | None, str]:
     """Detect ``use <tool_name> ...`` pattern in *message*.
 
+    Supports short aliases (e.g. ``use echo`` for ``echo_text``).
     Returns ``(tool_name, remaining)`` or ``(None, message)``.
     """
+    # Build lookup: alias → canonical name, plus each full name
+    lookup: dict[str, str] = {}
     for name in tool_names:
+        lookup[name] = name
+    for alias, canonical in TOOL_ALIASES.items():
+        if canonical in lookup:
+            lookup[alias] = canonical
+
+    # Match longest names first to avoid partial matches
+    for name in sorted(lookup, key=len, reverse=True):
         match = re.search(
             rf"\buse\s+{re.escape(name)}\s*(.*)", message, re.IGNORECASE)
         if match:
-            return name, match.group(1).strip()
+            return lookup[name], match.group(1).strip()
     return None, message
 
 
@@ -80,7 +96,7 @@ def build_tool_args(
     required = schema.get("required", [])
 
     if not properties:
-        return {"message": raw_args}
+        return {"message": raw_args} if raw_args else {}
 
     result: dict[str, Any] = {}
     numbers = parse_integers(raw_args)
@@ -116,7 +132,9 @@ def extract_tool_text(tool_message: Any) -> str:
         if getattr(content, "type", None) != "function_result":
             continue
         return _normalize_result(content.result)
-    return ""
+    # Fall back to message text when no function_result content
+    text = getattr(tool_message, "text", None)
+    return text if text else ""
 
 
 def _normalize_result(result: Any) -> str:

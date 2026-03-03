@@ -211,8 +211,12 @@ main() {
     names+=("mcp:num")
     colors+=("magenta")
 
+    commands+=("cd ${ROOT_DIR}/backend && uv run uvicorn agent_sandbox.demo_app_mcp_server:mcp.http_app --factory --host 0.0.0.0 --port 8003 --reload")
+    names+=("mcp:app")
+    colors+=("white")
+
     # Main server starts after MCP servers are healthy
-    commands+=("until curl -sf http://localhost:8001/health && curl -sf http://localhost:8002/health; do sleep 1; done && cd ${ROOT_DIR}/backend && uv run uvicorn agent_sandbox.server:app --host 0.0.0.0 --port 8888 --reload")
+    commands+=("until curl -sf http://localhost:8001/health && curl -sf http://localhost:8002/health && curl -sf http://localhost:8003/health; do sleep 1; done && cd ${ROOT_DIR}/backend && uv run uvicorn agent_sandbox.server:app --host 0.0.0.0 --port 8888 --reload")
     names+=("server")
     colors+=("blue")
   fi

@@ -26,6 +26,11 @@ export default defineConfig({
         target: 'http://localhost:4318',
         changeOrigin: true,
       },
+      // Proxy MCP resource endpoint (must be before /api)
+      '/api/mcp-resource': {
+        target: 'http://0.0.0.0:8888',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://0.0.0.0:8888',
         changeOrigin: true,
@@ -40,11 +45,12 @@ export default defineConfig({
         target: 'http://0.0.0.0:8888',
         changeOrigin: true,
       },
-      // Use regex to match /mcp exactly or /mcp/ paths, but NOT /mcp-chat
+      // Use regex to match /mcp exactly or /mcp/ paths, but NOT /mcp-chat or /mcp-app
       '^/mcp(/|$)': {
         target: 'http://0.0.0.0:8888',
         changeOrigin: true,
-        rewrite: (path: string) => path,
+        // Ensure trailing slash to avoid 307 redirect from uvicorn
+        rewrite: (path: string) => path.endsWith('/') || path.includes('?') ? path : path + '/',
       },
       // Proxy OTLP endpoints for browser telemetry (avoids CORS issues)
       '/v1/traces': {
